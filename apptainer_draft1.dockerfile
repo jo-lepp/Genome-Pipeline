@@ -1,0 +1,181 @@
+Bootstrap: localimage
+From: /home/jalepper/genome_pipeline/prototyping/take_two/env.sif
+
+%arguments
+    #have variables in the environment section instead?
+    input_fgz="/home/user/data/input.fastq.gz"
+    output_path="/home/user/data/output"
+    root="sample"
+
+%environment
+    export PATH="/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+    export CONDA_DEFAULT_ENV=base
+
+%runscript
+    #!/bin/bash
+    set -eo pipefail
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate base
+#PROCESSING
+    prefix="${input_fgz%.fastq.gz}"
+    root="${prefix##*/}"
+    
+#ASSEMBLING WITH MYLOASM
+    conda activate assemblers
+    mylo_bins="${output_path}/${root}_myloasm"
+    myloasm "$input_fgz" -o "$mylo_bins" -t 10 --hifi
+    mylo_assembly="${mylo_bins}/assembly_primary.fa"
+    conda deactivate
+
+#minimap, samtools
+    conda activate tools
+    sam_filepath="${output_path}/${root}_.sam"
+    minimap2 --eqx -t 32 -a -x map-hifi "$mylo_assembly" "$input_fgz" > "$sam_filepath"
+    bam_path="${output_path}/${root}_sorted.bam"
+    samtools sort -@ 32 -o "$bam_path" "$sam_filepath"
+    samtools index "$bam_path"
+    conda deactivate
+    echo "Myloasm assembly done."
+
+#binning (metabat2, semibin, remag)
+    conda activate binners
+    depth_path="${output_path}/${root}_depth.txt"
+    jgi_summarize_bam_contig_depths  --outputDepth "$depth_path" "$bam_path"
+
+    mkdir "${output_path}/${root}_metabat"
+    mkdir "${output_path}/${root}_metabat/bins"
+    metabat_path="${output_path}/${root}_metabat/bins"
+    metabat_output="${output_path}/${root}_metabat/bins/metabat"
+    metabat2 -i "$mylo_assembly" -a "$depth_path" -o "$metabat_output" --unbinned
+    mv ${metabat_path}/*.txt ${output_path}/${root}_metabat
+    echo "metabat2 binning done"
+
+    mkdir "${output_path}/${root}_semibin"
+    mkdir "${output_path}/${root}_semibin/soil_model"
+    soil_path="${output_path}/${root}_semibin/soil_model"
+    mkdir "${output_path}/${root}_semibin/global_model"
+    global_path="${output_path}/${root}_semibin/global_model"
+    mkdir "${output_path}/${root}_semibin/self_model"
+    self_path="${output_path}/${root}_semibin/self_model"
+
+    SemiBin2 single_easy_bin --sequencing-type long_read --environment soil -i $mylo_assembly -b $bam_path -o $soil_path
+    SemiBin2 single_easy_bin --sequencing-type long_read --self-supervised -i $mylo_assembly -b $bam_path -o $self_path
+    SemiBin2 single_easy_bin --sequencing-type long_read --environment global -i $mylo_assembly -b $bam_path -o $global_path
+    echo "Semibin2 binning done"
+
+    mkdir "${output_path}/${root}_remag"
+    remag_output="${output_path}/${root}_remag"
+    remag_bins="${remag_output}/bins"
+    remag $mylo_assembly -c $bam_path -o $remag_output --save_filtered_contigs
+    echo "remag binning done"
+
+    conda deactivate
+
+#DEREPLICATION
+    conda activate drep
+    dRep dereplicate "${output_path}/${root}_metabat/drep" -g ${metabat_path}/*.fa
+    dRep dereplicate "${self_path}/drep" -g ${self_path}/output_bins/*.fa.gz
+    dRep dereplicate "${soil_path}/drep" -g ${soil_path}/output_bins/*.fa.gz
+    dRep dereplicate "${global_path}/drep" -g ${global_path}/output_bins/*.fa.gz
+    echo "dereplication done"
+    conda deactivate
+
+#BACTERIAL QC
+    conda activate checkm2
+    mkdir ${output_path}/checkm2_db
+    db_path="${output_path}/checkm2_db"
+    checkm2 database --download --path $db_path --no_write_json_db
+    checkm2 predict --threads 10 --input "${output_path}/${root}_metabat/drep/dereplicated_genomes" --extension .fa --output_directory "${output_path}/${root}_metabat/checkm2" --database_path ${db_path}/CheckM2_database/uniref100.KO.1.dmnd
+    checkm2 predict --threads 10 --input "${self_path}/drep/dereplicated_genomes" --extension .fa.gz --output-directory "${self_path}/checkm2" --database_path ${db_path}/CheckM2_database/uniref100.KO.1.dmnd
+    checkm2 predict --threads 10 --input "${soil_path}/drep/dereplicated_genomes" --extension .fa.gz --output_directory "${soil_path}/checkm2" --database_path ${db_path}/CheckM2_database/uniref100.KO.1.dmnd
+    checkm2 predict --threads 10 --input "${global_path}/drep/dereplicated_genomes" --extension .fa.gz --output_directory "${global_path}/checkm2" --database_path ${db_path}/CheckM2_database/uniref100.KO.1.dmnd
+    echo "checkm2 done"
+    conda deactivate
+
+#EUKARYOTIC QC
+    conda activate busco
+
+    self_unzipped="${self_path}/output_bins_unzipped"
+    mkdir -p "$self_unzipped"
+    for f in "${self_path}/drep/dereplicated_genomes/"*.fa.gz; do
+        gunzip -c "$f" > "${self_unzipped}/$(basename "${f%.gz}")"
+    done
+    soil_unzipped="${soil_path}/output_bins_unzipped"
+    mkdir -p "$soil_unzipped"
+    for f in "${soil_path}/drep/dereplicated_genomes/"*.fa.gz; do
+        gunzip -c "$f" > "${soil_unzipped}/$(basename "${f%.gz}")"
+    done
+    global_unzipped="${global_path}/output_bins_unzipped"
+    mkdir -p "$global_unzipped"
+    for f in "${global_path}/drep/dereplicated_genomes/"*.fa.gz; do
+        gunzip -c "$f" > "${global_unzipped}/$(basename "${f%.gz}")"
+    done
+    busco -i ${output_path}/{root}_metabat/drep/dereplicated_genomes --out_path "${output_path}/${root}_metabat" -o busco -m genome -f -l eukaryota_odb10
+    busco -i $remag_bins --out_path $remag_output -o busco -m genome -f -l eukaryota_odb10
+    busco -i "${self_path}/output_bins_unzipped" --out_path ${self_path} -o busco -m genome -f -l eukaryota_odb10
+    busco -i "${soil_path}/output_bins_unzipped" --out_path ${soil_path} -o busco -m genome -f -l eukaryota_odb10
+    busco -i "${global_path}/output_bins_unzipped" --out_path $global_path -o busco -m genome -f -l eukaryota_odb10
+    echo "busco done."
+    conda deactivate
+
+#BACTERIAL TAXONOMY
+    conda activate gtdbtk
+    export GTDBTK_DATA_PATH="${output_path}/gtdbtk_db"
+    mkdir -p "$GTDBTK_DATA_PATH"
+
+    if [ -z "$(ls -A "$GTDBTK_DATA_PATH" 2>/dev/null)" ]; then
+        wget -O "${GTDBTK_DATA_PATH}/gtdbtk_data.tar.gz" \
+            "https://data.gtdb.ecogenomic.org/releases/latest/auxillary_files/gtdbtk_package/full_package/gtdbtk_data.tar.gz"
+        tar -xzf "${GTDBTK_DATA_PATH}/gtdbtk_data.tar.gz" -C "$GTDBTK_DATA_PATH" --strip-components=1
+        rm "${GTDBTK_DATA_PATH}/gtdbtk_data.tar.gz"
+    fi
+    gtdbtk classify_wf --genome_dir "${output_path}/${root}_metabat/drep/dereplicated_genomes" --out_dir "${output_path}/${root}_metabat/gtdbtk"  -x .fa
+    gtdbtk classify_wf --genome_dir "${global_path}/drep/dereplicated_genomes" --out_dir "${global_path}/gtdbtk" -x .fa.gz
+    gtdbtk classify_wf --genome_dir "${soil_path}/drep/dereplicated_genomes" --out_dir "${soil_path}/gtdbtk" -x .fa.gz
+    gtdbtk classify_wf --genome_dir "${self_path}/drep/dereplicated_genomes" --out_dir "${self_path}/gtdbtk" -x .fa.gz
+    echo "bacterial taxonomy done."
+    conda deactivate
+    
+#EUK/VIRAL TAXONOMY
+    cd /opt/gvclass
+    pixi run setup-db
+    mkdir -p ${output_path}/${root}_gvclass
+    gvclass="${output_path}/${root}_gvclass"
+
+    mkdir -p "${output_path}/${root}_metabat/fna"
+    for f in "${output_path}/${root}_metabat/drep/dereplicated_genomes"/*.fa; do
+        cp "$f" "${output_path}/${root}_metabat/fna/$(basename "${f%.fa}.fna")"
+    done
+    pixi run gvclass ${output_path}/${root}_metabat/fna -o ${gvclass}/metabat -t 24 --tree-method fasttree
+
+    mkdir -p "${remag_output}/fna"
+    for f in "${remag_output}/drep/dereplicated_genomes"/*.fa; do
+        cp "$f" "${remag_output}/fna/$(basename "${f%.fa}.fna")"
+    done
+    pixi run gvclass ${remag_output}/fna -o ${gvclass}/remag -t 24 --tree-method fasttree
+
+    mkdir -p "${global_path}/fna"
+    for f in "${global_path}/output_bins_unzipped"/*.fa; do
+        cp "$f" "${global_path}/fna/$(basename "${f%.fa}.fna")"
+    done
+    pixi run gvclass ${global_path}/fna -o ${gvclass}/global -t 24 --tree-method fasttree
+
+    mkdir -p "${self_path}/fna"
+    for f in "${self_path}/output_bins_unzipped"/*.fa; do
+        cp "$f" "${self_path}/fna/$(basename "${f%.fa}.fna")"
+    done
+    pixi run gvclass ${self_path}/fna -o ${gvclass}/self -t 24 --tree-method fasttree
+
+    mkdir -p "${soil_path}/fna"
+    for f in "${soil_path}/output_bins_unzipped"/*.fa; do
+        cp "$f" "${soil_path}/fna/$(basename "${f%.fa}.fna")"
+    done
+    pixi run gvclass ${soil_path}/fna -o ${gvclass}/soil -t 24 --tree-method fasttree
+
+    echo "gvclass done"
+    echo "Full pipeline done at [$(date '+%H:%M:%S')]."
+
+
+
+
+
