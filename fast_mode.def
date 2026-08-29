@@ -1,5 +1,5 @@
 Bootstrap: localimage
-From: /home/jalepper/genome_pipeline/prototyping/take_two/env_fast.sif
+From: env_fast.sif
 
 %arguments
     #have variables in the environment section instead?
