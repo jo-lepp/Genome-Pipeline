@@ -8,7 +8,7 @@ git clone https://github.com/jo-lepp/Genome-Pipeline.git
 ```
 # Apptainer Container setup
 
-This setup only needs to be done once. Navigate to the cloned github folder and run the following commands.
+This setup only needs to be done once, and requires apptainer (formerly singularity). Navigate to the cloned github folder and run the following commands:
 
 ```bash
 apptainer build env.sif env.def
@@ -18,6 +18,7 @@ apptainer build fast_mode.sif fast_mode.def
 apptainer build full_mode.sif full_mode.def
 apptainer build pre_assembled.sif pre_assembled.def
 ```
+Full official installation docs for apptainer: https://apptainer.org/docs/admin/main/installation.html
 
 # Full Mode
 
