@@ -39,6 +39,7 @@ Explanation:
 # Fast Mode
 
 Runs: Myloasm, Metabat2, Semibin (soil/global), dRep, busco, checkm2, cmsearch (euk)
+
 Doesn't Run: Remag, Semibin self-trained model, gvclass, gtdbtk
 
 Command:
@@ -57,7 +58,7 @@ Explanation:
 
 Runs: MetaBat2, Remag, Semibin (soil, self, global), dRep, Busco, Checkm2, gtdbtk, gvclass
 
-Essentially, the fast-mode version with a given assembly file
+Essentially, the full-mode version with a given assembly file
 
 Command:
 ```bash
