@@ -111,7 +111,7 @@ From: env.sif
     for f in "${global_path}/drep/dereplicated_genomes/"*.fa.gz; do
         gunzip -c "$f" > "${global_unzipped}/$(basename "${f%.gz}")"
     done
-    busco -i ${output_path}/{root}_metabat/drep/dereplicated_genomes --out_path "${output_path}/${root}_metabat" -o busco -m genome -f -l eukaryota_odb10
+    busco -i ${output_path}/${root}_metabat/drep/dereplicated_genomes --out_path "${output_path}/${root}_metabat" -o busco -m genome -f -l eukaryota_odb10
     busco -i $remag_bins --out_path $remag_output -o busco -m genome -f -l eukaryota_odb10
     busco -i "${self_path}/output_bins_unzipped" --out_path ${self_path} -o busco -m genome -f -l eukaryota_odb10
     busco -i "${soil_path}/output_bins_unzipped" --out_path ${soil_path} -o busco -m genome -f -l eukaryota_odb10
