@@ -37,7 +37,7 @@ Explanation:
 –bind: Connect specific folders so that the container can view what’s inside and use those files. 
   Path_to_data_folder should be the folder that contains the fastq.gz, path_to_output_folder should be the folder where you want the outputs to land.
 
-–env: setting variables for the container.
+–env: setting variables for the container. List the full file path with file name.
   nametag is for declaring what should precede file extension names, ex: nametag.fasta
 
 /path/to/folder should be the file path to the cloned github folder.
@@ -61,7 +61,7 @@ Explanation:
 –bind: Connect specific folders so that the container can view what’s inside and use those files. 
   Path_to_data_folder should be the folder that contains the fastq.gz, path_to_output_folder should be the folder where you want the outputs to land.
 
-–env: setting variables for the container.
+–env: setting variables for the container. List the full file path with file name.
   nametag is for declaring what should precede file extension names, ex: nametag.fasta
 
 /path/to/folder should be the file path to the cloned github folder.
@@ -86,7 +86,7 @@ Explanation:
 –bind: Connect specific folders so that the container can view what’s inside and use those files. 
   Path_to_data_folder should be the folder that contains the fastq.gz, path_to_output_folder should be the folder where you want the outputs to land. path_to_assembly_folder should contain the assembly. Note: if the assembly and fastq.gz are in the same folder, you only need one bind statement.
 
-–env: setting variables for the container. 
+–env: setting variables for the container. List the full file path with file name.
   nametag is for declaring what should precede file extension names, ex: nametag.fasta
 
 /path/to/folder should be the file path to the cloned github folder.
