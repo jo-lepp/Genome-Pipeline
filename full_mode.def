@@ -6,6 +6,7 @@ From: env.sif
     input_fgz="/home/user/data/input.fastq.gz"
     output_path="/home/user/data/output"
     root="sample"
+    nametag=""
 
 %environment
     export PATH="/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
