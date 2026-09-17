@@ -7,6 +7,7 @@ From: env.sif
     output_path="/home/user/data/output"
     root="not_activated"
     input_fgz="/home/user/data/input.fastq.gz"
+    nametag=""
 
 %environment
     export PATH="/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -20,8 +21,12 @@ From: env.sif
     conda activate base
 
 #PROCESSING
-    prefix="${assembly%.fa}"
-    root="${prefix##*/}"
+    if [ -z "$nametag" ]; then
+        prefix="${input_fgz%.fastq.gz}"
+        root="${prefix##*/}"
+    else
+        root=$nametag
+    fi
 
 #minimap, samtools
     conda activate tools
