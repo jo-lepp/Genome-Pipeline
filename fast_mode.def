@@ -17,8 +17,12 @@ From: env_fast.sif
     . /opt/conda/etc/profile.d/conda.sh
     conda activate base
 #PROCESSING
-    prefix="${input_fgz%.fastq.gz}"
-    root="${prefix##*/}"
+    if [ -z "$nametag" ]; then
+        prefix="${input_fgz%.fastq.gz}"
+        root="${prefix##*/}"
+    else
+        root=$nametag
+    fi
     
 #ASSEMBLING WITH MYLOASM
     conda activate assemblers

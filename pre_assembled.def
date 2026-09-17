@@ -20,8 +20,12 @@ From: env.sif
     conda activate base
 
 #PROCESSING
-    prefix="${assembly%.fa}"
-    root="${prefix##*/}"
+     if [ -z "$nametag" ]; then
+        prefix="${input_fgz%.fastq.gz}"
+        root="${prefix##*/}"
+    else
+        root=$nametag
+    fi
 
 #minimap, samtools
     conda activate tools
