@@ -12,7 +12,8 @@ From: continuumio/miniconda3
     # install conda stuff here
     conda create -y --name assemblers myloasm 
     conda create -y --name tools minimap2 samtools bedtools bbmap pigz
-    conda create -y --name drep drep "pandas<2.0"
+    conda install -y -n base -c conda-forge mamba
+    mamba create -y --name drep python=3.9 drep "pandas<2.0"
     conda create -y --name busco busco
     conda create -y --name checkm2 checkm2
     conda create -y --name cmsearch infernal

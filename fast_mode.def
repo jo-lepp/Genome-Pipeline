@@ -6,6 +6,7 @@ From: env_fast.sif
     input_fgz="/home/user/data/input.fastq.gz"
     output_path="/home/user/data/output"
     root="sample"
+    nametag=""
 
 %environment
     export PATH="/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -46,18 +47,18 @@ From: env_fast.sif
     depth_path="${output_path}/${root}_depth.txt"
     jgi_summarize_bam_contig_depths  --outputDepth "$depth_path" "$bam_path"
 
-    mkdir "${output_path}/${root}_metabat"
-    mkdir "${output_path}/${root}_metabat/bins"
+    mkdir -p "${output_path}/${root}_metabat"
+    mkdir -p "${output_path}/${root}_metabat/bins"
     metabat_path="${output_path}/${root}_metabat/bins"
     metabat_output="${output_path}/${root}_metabat/bins/metabat"
     metabat2 -i "$mylo_assembly" -a "$depth_path" -o "$metabat_output" --unbinned
     mv ${metabat_path}/*.txt ${output_path}/${root}_metabat
     echo "metabat2 binning done"
 
-    mkdir "${output_path}/${root}_semibin"
-    mkdir "${output_path}/${root}_semibin/soil_model"
+    mkdir -p "${output_path}/${root}_semibin"
+    mkdir -p "${output_path}/${root}_semibin/soil_model"
     soil_path="${output_path}/${root}_semibin/soil_model"
-    mkdir "${output_path}/${root}_semibin/global_model"
+    mkdir -p "${output_path}/${root}_semibin/global_model"
     global_path="${output_path}/${root}_semibin/global_model"
 
     SemiBin2 single_easy_bin --sequencing-type long_read --environment soil -i $mylo_assembly -b $bam_path -o $soil_path
@@ -76,7 +77,7 @@ From: env_fast.sif
 
 #BACTERIAL QC
     conda activate checkm2
-    mkdir ${output_path}/checkm2_db
+    mkdir -p ${output_path}/checkm2_db
     db_path="${output_path}/checkm2_db"
     checkm2 database --download --path $db_path --no_write_json_db
     checkm2 predict --threads 10 --input "${output_path}/${root}_metabat/drep/dereplicated_genomes" --extension .fa --output_directory "${output_path}/${root}_metabat/checkm2" --database_path ${db_path}/CheckM2_database/uniref100.KO.1.dmnd

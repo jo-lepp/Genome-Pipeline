@@ -26,13 +26,19 @@ Runs: Myloasm, MetaBat2, Remag, Semibin (soil, self, global), dRep, Busco, Check
 
 Command: 
 ```bash
-apptainer run --bind /home/user/path_to_data_folder:/home/user/path_to_data_folder --bind /home/user/path_to_output_folder:/home/user/path_to_output_folder --env input_fgz=/home/user/path/to/fgz --env output_path=/home/user/path/to/output_folder /path/to/folder/full_mode.sif
+apptainer run --bind /home/user/path_to_data_folder:/home/user/path_to_data_folder \
+--bind /home/user/path_to_output_folder:/home/user/path_to_output_folder \
+--env input_fgz=/home/user/path/to/fgz \
+--env output_path=/home/user/path/to/output_folder \
+--env nametag=nametag_string /path/to/folder/full_mode.sif
 ```
 
 Explanation:
-–bind: Connect specific folders so that the container can view what’s inside and use those files. Path_to_data_folder should be the folder that contains the fastq.gz, path_to_output_folder should be the folder where you want the outputs to land.
+–bind: Connect specific folders so that the container can view what’s inside and use those files. 
+  Path_to_data_folder should be the folder that contains the fastq.gz, path_to_output_folder should be the folder where you want the outputs to land.
 
-–env: setting variables for the container.
+–env: setting variables for the container. List the full file path with file name.
+  nametag is for declaring what should precede file extension names, ex: nametag.fasta
 
 /path/to/folder should be the file path to the cloned github folder.
 
@@ -44,13 +50,19 @@ Doesn't Run: Remag, Semibin self-trained model, gvclass, gtdbtk
 
 Command:
 ```bash
-apptainer run --bind /home/user/path_to_data_folder:/home/user/path_to_data_folder --bind /home/user/path_to_output_folder:/home/user/path_to_output_folder --env input_fgz=/home/user/path/to/fgz --env output_path=/home/user/path/to/output_folder /path/to/folder/fast_mode.sif
+apptainer run --bind /home/user/path_to_data_folder:/home/user/path_to_data_folder \
+--bind /home/user/path_to_output_folder:/home/user/path_to_output_folder \
+--env input_fgz=/home/user/path/to/fgz \
+--env output_path=/home/user/path/to/output_folder \
+--env nametag=nametag_string /path/to/folder/fast_mode.sif
 ```
 
 Explanation:
-–bind: Connect specific folders so that the container can view what’s inside and use those files. Path_to_data_folder should be the folder that contains the fastq.gz, path_to_output_folder should be the folder where you want the outputs to land.
+–bind: Connect specific folders so that the container can view what’s inside and use those files. 
+  Path_to_data_folder should be the folder that contains the fastq.gz, path_to_output_folder should be the folder where you want the outputs to land.
 
-–env: setting variables for the container.
+–env: setting variables for the container. List the full file path with file name.
+  nametag is for declaring what should precede file extension names, ex: nametag.fasta
 
 /path/to/folder should be the file path to the cloned github folder.
 
@@ -62,13 +74,20 @@ Essentially, the full-mode version with a given assembly file
 
 Command:
 ```bash
-apptainer run --bind /home/user/path_to_data_folder:/home/user/path_to_data_folder --bind /home/user/path_to_output_folder:/home/user/path_to_output_folder --bind /home/user/path_to_assembly_folder:/home/user/path_to_assembly_folder: --env input_fgz=/home/user/path/to/fgz --env output_path=/home/user/path/to/output_folder --env assembly=/home/user/path/to/assembly.fa /path/tofolder/pre_assembled.sif
+apptainer run --bind /home/user/path_to_data_folder:/home/user/path_to_data_folder \
+--bind /home/user/path_to_output_folder:/home/user/path_to_output_folder \
+--bind /home/user/path_to_assembly_folder:/home/user/path_to_assembly_folder \
+--env input_fgz=/home/user/path/to/fgz --env output_path=/home/user/path/to/output_folder \
+--env assembly=/home/user/path/to/assembly.fa
+--env nametag=name_tag_string /path/tofolder/pre_assembled.sif
 ```
 
 Explanation:
-–bind: Connect specific folders so that the container can view what’s inside and use those files. Path_to_data_folder should be the folder that contains the fastq.gz, path_to_output_folder should be the folder where you want the outputs to land. path_to_assembly_folder should contain the assembly. Note: if the assembly and fastq.gz are in the same folder, you only need one bind statement.
+–bind: Connect specific folders so that the container can view what’s inside and use those files. 
+  Path_to_data_folder should be the folder that contains the fastq.gz, path_to_output_folder should be the folder where you want the outputs to land. path_to_assembly_folder should contain the assembly. Note: if the assembly and fastq.gz are in the same folder, you only need one bind statement.
 
-–env: setting variables for the container. 
+–env: setting variables for the container. List the full file path with file name.
+  nametag is for declaring what should precede file extension names, ex: nametag.fasta
 
 /path/to/folder should be the file path to the cloned github folder.
 
