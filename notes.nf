@@ -32,18 +32,12 @@ workflow {
 main:
 channel_name = channel.of(can be a bunch of inputs)
 name_here(params.input or channel_name)
-    .map() // might be good if we decide to pull best bins
+    .map() 
 
 // using the output of one process in another process
 second_process(name_here.out)
 
 channel_two = channel.fromPath(params.path_input)
-
-
-publish:
-
-// outputs here
-first_output = second_process.out.second_out
 
 }
 
@@ -57,3 +51,5 @@ first_output {
 }
 
 }
+
+//params file would be so helpful
