@@ -34,33 +34,43 @@ workflow {
     }
 
     // ================= 0. BUILD PER-SAMPLE CHANNELS =================
-    // <-- THIS is the block from my last message. It goes right here,
-    //     replacing whatever version of this if/else you currently have.
+    if (!(params.read_type in ['hifi', 'ont'])) {
+        error("params.read_type must be 'hifi' or 'ont', got: '${params.read_type}'")
+    }
+
     if (params.samplesheet?.trim()) {
         // ---- multi-sample mode ----
-        ch_samples = Channel.fromPath(params.samplesheet)
-            .splitCsv(header: true)
-            .map { row ->
-                if (!row.fastq?.trim()) exit 1, "samplesheet row missing 'fastq': ${row}"
+        def sheet_file = file(params.samplesheet)
+        if (!sheet_file.exists()) error("samplesheet not found: ${params.samplesheet}")
 
-                def fastq_file = file(row.fastq)
-                if (!fastq_file.exists()) exit 1, "fastq not found: ${row.fastq}"
+        // Parsed eagerly as a plain list (not a lazy channel), so every
+        // validation error below surfaces immediately and halts the run
+        // before any process launches. A channel .subscribe{} callback
+        // fires asynchronously and can't reliably guarantee that.
+        def rows = sheet_file.splitCsv(header: true)
 
-                def sample_name = fastq_file.simpleName
+        def parsed = rows.collect { row ->
+            if (!row.fastq?.trim()) error("samplesheet row missing 'fastq': ${row}")
 
-                def assembly_file = row.assembly?.trim() ? file(row.assembly) : null
-                if (assembly_file && !assembly_file.exists()) exit 1, "assembly not found for ${sample_name}: ${row.assembly}"
+            def fastq_file = file(row.fastq)
+            if (!fastq_file.exists()) error("fastq not found: ${row.fastq}")
 
-                tuple(sample_name, fastq_file, assembly_file)
+            def sample_name = fastq_file.simpleName
+
+            def assembly_file = row.assembly?.trim() ? file(row.assembly) : null
+            if (assembly_file && !assembly_file.exists()) {
+                error("assembly not found for ${sample_name}: ${row.assembly}")
             }
 
-        ch_samples
-            .map { sample, fastq, assembly -> sample }
-            .toList()
-            .subscribe { names ->
-                def dupes = names.countBy { it }.findAll { k, v -> v > 1 }.keySet()
-                if (dupes) exit 1, "Duplicate sample name(s) derived from fastq filename: ${dupes.join(', ')}. Rename the input files to disambiguate."
-            }
+            [sample_name, fastq_file, assembly_file]
+        }
+
+        def dupes = parsed.collect { it[0] }.countBy { it }.findAll { k, v -> v > 1 }.keySet()
+        if (dupes) {
+            error("Duplicate sample name(s) derived from fastq filename: ${dupes.join(', ')}. Rename the input files to disambiguate.")
+        }
+
+        ch_samples = Channel.fromList(parsed)
 
         ch_input = ch_samples.map { sample, fastq, assembly -> tuple(sample, fastq) }
 
@@ -81,7 +91,7 @@ workflow {
 
         if (params.assembly?.trim()) {
             def assembly_file = file(params.assembly)
-            if (!assembly_file.exists()) exit 1, "params.assembly was set but file not found: ${params.assembly}"
+            if (!assembly_file.exists()) error("params.assembly was set but file not found: ${params.assembly}")
             ch_needs_assembly = Channel.empty()
             ch_has_assembly   = Channel.of( tuple(root_name, assembly_file) )
         } else {

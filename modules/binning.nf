@@ -124,10 +124,10 @@ workflow BINNING {
         def selected = params.semibin_models.split(',')*.trim()
         def unknown  = selected - all_models.keySet().toList()
         if (unknown) {
-            exit 1, "Unknown semibin_models entry: ${unknown.join(', ')}. Valid options: ${all_models.keySet().join(', ')}"
+            error("Unknown semibin_models entry: ${unknown.join(', ')}. Valid options: ${all_models.keySet().join(', ')}")
         }
 
-        ch_semibin_models = Channel.of(*selected.collect { model -> [model, all_models[model]] })
+        ch_semibin_models = Channel.fromList(selected.collect { model -> [model, all_models[model]] })
 
         ch_semibin_in = ch_assembly_bam.combine(ch_semibin_models)
         SEMIBIN2(ch_semibin_in)
