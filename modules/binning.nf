@@ -1,10 +1,9 @@
-
 // ---- jgi_summarize_bam_contig_depths (ships with the metabat2 package) ----
 process DEPTH {
     tag "$root"
     label 'binning'
     conda "bioconda::metabat2"
-    publishDir {"${params.outdir}"}, mode: params.publish_mode
+    publishDir { "${params.outdir}" }, mode: params.publish_mode
 
     input:
     tuple val(root), path(bam), path(bai)
@@ -24,7 +23,6 @@ process METABAT2 {
     label 'binning'
     conda "bioconda::metabat2"
     publishDir { "${params.outdir}/${root}_metabat" }, mode: params.publish_mode
-
 
     input:
     tuple val(root), path(mylo_assembly), path(depth_path)
@@ -97,9 +95,9 @@ workflow BINNING {
     ch_assembly_bam   // tuple(root, mylo_assembly, bam, bai)
 
     main:
-    ch_metabat_bins = Channel.empty()
-    ch_semibin_bins = Channel.empty()
-    ch_remag_bins   = Channel.empty()
+    ch_metabat_bins   = Channel.empty()
+    ch_semibin_bins   = Channel.empty()
+    ch_remag_bins     = Channel.empty()
     ch_remag_bins_dir = Channel.empty()
 
     if (params.run_metabat2) {
@@ -135,16 +133,15 @@ workflow BINNING {
         ch_semibin_bins = SEMIBIN2.out.bins
     }
 
-        if (params.run_remag) {
+    if (params.run_remag) {
         REMAG(ch_assembly_bam)
         ch_remag_bins     = REMAG.out.bins
-        ch_remag_bins_dir = REMAG.out.bins_dir     // <-- add this line
+        ch_remag_bins_dir = REMAG.out.bins_dir
     }
 
     emit:
-    metabat_bins     = ch_metabat_bins
-    semibin_bins     = ch_semibin_bins
-    remag_bins       = ch_remag_bins
-    remag_bins_dir   = ch_remag_bins_dir   // <-- add this line
-}
+    metabat_bins   = ch_metabat_bins
+    semibin_bins   = ch_semibin_bins
+    remag_bins     = ch_remag_bins
+    remag_bins_dir = ch_remag_bins_dir
 }
