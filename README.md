@@ -4,6 +4,14 @@ information on pipeline here (come back to this)
 
 - Note that the first iteration of this pipeline was build for apptainer. .def files are found in the apptainer_defs folder
 
+## Downloading Nextflow
+
+on your terminal with conda already installed, run
+
+```bash
+conda install -c bioconda -c conda-forge nextflow
+```
+
 ## Pipeline stages
 
 ```
