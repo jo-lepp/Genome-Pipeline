@@ -4,7 +4,7 @@ process DEPTH {
     tag "$root"
     label 'binning'
     conda "bioconda::metabat2"
-    publishDir "${params.outdir}", mode: params.publish_mode
+    publishDir {"${params.outdir}"}, mode: params.publish_mode
 
     input:
     tuple val(root), path(bam), path(bai)
@@ -23,7 +23,8 @@ process METABAT2 {
     tag "$root"
     label 'binning'
     conda "bioconda::metabat2"
-    publishDir "${params.outdir}/${root}_metabat", mode: params.publish_mode
+    publishDir { "${params.outdir}/${root}_metabat" }, mode: params.publish_mode
+
 
     input:
     tuple val(root), path(mylo_assembly), path(depth_path)
@@ -48,7 +49,7 @@ process SEMIBIN2 {
     tag "${root}:${model}"
     label 'binning'
     conda "bioconda::semibin"
-    publishDir "${params.outdir}/${root}_semibin/${model}_model", mode: params.publish_mode
+    publishDir { "${params.outdir}/${root}_semibin/${model}_model" }, mode: params.publish_mode
 
     input:
     tuple val(root), path(mylo_assembly), path(bam), path(bai), val(model), val(mode_flag)
@@ -69,7 +70,7 @@ process REMAG {
     tag "$root"
     label 'binning'
     conda "bioconda::remag"
-    publishDir "${params.outdir}/${root}_remag", mode: params.publish_mode
+    publishDir { "${params.outdir}/${root}_remag" }, mode: params.publish_mode
 
     input:
     tuple val(root), path(mylo_assembly), path(bam), path(bai)

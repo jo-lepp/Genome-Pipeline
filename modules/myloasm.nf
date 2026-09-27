@@ -2,8 +2,8 @@ process MYLOASM {
     tag "$root"
     label 'assembly'
     conda "bioconda::myloasm"
-    publishDir "${params.outdir}/${root}_myloasm", mode: params.publish_mode
-
+    publishDir { "${params.outdir}/${root}_myloasm" }, mode: params.publish_mode
+    
     input:
     tuple val(root), path(input_fgz)
 

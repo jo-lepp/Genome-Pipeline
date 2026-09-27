@@ -80,7 +80,7 @@ process GVCLASS {
     tag "${root}:${label}"
     label 'gvclass'
     conda "conda-forge::pixi"
-    publishDir "${params.outdir}/${root}_gvclass", mode: params.publish_mode
+    publishDir { "${params.outdir}/${root}_gvclass" }, mode: params.publish_mode
 
     input:
     tuple val(root), val(label), path(fna_dir)
