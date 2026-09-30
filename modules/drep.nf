@@ -14,7 +14,7 @@
 // ---- checkM v1 reference database, downloaded once ----
 process CHECKM1_DB {
     label 'binning'
-    conda "bioconda::drep"
+    conda "bioconda::drep conda-forge::python=3.10 conda-forge::setuptools=75.8.2"
     storeDir "${params.db_dir}/checkm1_db"
 
     output:
@@ -32,7 +32,7 @@ process CHECKM1_DB {
 process DREP {
     tag "${root}:${label}"
     label 'binning'
-    conda "bioconda::drep"
+    conda "bioconda::drep conda-forge::python=3.10 conda-forge::setuptools=75.8.2"
     publishDir { "${params.outdir}/${pub_subpath}" }, mode: params.publish_mode
 
     input:
@@ -44,9 +44,6 @@ process DREP {
 
     script:
     """
-    # Register checkM1's reference data for this task. Cheap/idempotent -
-    # just points checkM at an already-downloaded directory, does not
-    # re-download anything.
     checkm data setRoot "${checkm1_db}"
 
     dRep dereplicate drep -g genomes_in/*.${ext}
