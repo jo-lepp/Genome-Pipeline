@@ -12,7 +12,7 @@
  *
  *      Optional Changes to Steps:
  *   1. can toggle the semibin models, remag, and metabat2 binning
- *   2. can toggle gvclass and gtdbtk, option to replace wiht cmsearch
+ *   2. can toggle gvclass and gtdbtk, option to replace with ssuExtract/cmsearch
  */
 
 nextflow.enable.dsl = 2
@@ -25,7 +25,7 @@ include { CHECKM2_QC }       from './modules/checkm2.nf'
 include { BUSCO_QC }         from './modules/busco.nf'
 include { GTDBTK_CLASSIFY }  from './modules/gtdbtk.nf'
 include { GVCLASS_TAXONOMY } from './modules/gvclass.nf'
-include { CMSEARCH_EUK } from './modules/cmsearch.nf'
+include { CMSEARCH_EUK, SSU_EXTRACT_ALL } from './modules/cmsearch.nf'
 
 workflow {
 
@@ -137,6 +137,12 @@ workflow {
 
     // ================= fast mode: cmsearch instead of full taxonomy =================
     if (params.run_cmsearch) {
-        CMSEARCH_EUK(ch_assembly)
-    }
+        if (!(params.fast_mode_tool in ['ssu_extract', 'cmsearch'])) {
+            error("params.fast_mode_tool must be 'ssu_extract' or 'cmsearch', got: '${params.fast_mode_tool}'")
+        }
+        if (params.fast_mode_tool == 'ssu_extract') {
+            SSU_EXTRACT_ALL(ch_assembly)
+        } else {
+            CMSEARCH_EUK(ch_assembly)
+        }
 }

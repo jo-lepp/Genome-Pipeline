@@ -1,3 +1,66 @@
+/*
+ * NEW default fast-mode tool: SSUextract (https://github.com/NeLLi-team/ssuextract)
+ *
+ * A full Nextflow pipeline in its own right (pixi-managed, same pattern as
+ * GVClass): detects 16S/18S rRNA genes via bundled Infernal covariance
+ * models (RF00177 -> 16S index, RF01960 -> 18S index), then assigns
+ * taxonomy via BLAST against SILVA+PR2 (curated profile) or SILVA+PR2+IMG
+ * (img profile), with an optional tree-based classification step.
+ * Archaea are covered through SILVA's 16S taxonomy, not a separate model.
+ */
+
+process SSUEXTRACT_SETUP {
+    label 'ssuextract'
+    conda "conda-forge::git conda-forge::pixi"
+    storeDir "${params.db_dir}"
+
+    output:
+    path "ssuextract_install", emit: install_dir
+
+    script:
+    """
+    git clone ${params.ssuextract_repo_url} ssuextract_install
+    cd ssuextract_install
+    pixi install --frozen
+    pixi run setup --database_profile ${params.ssuextract_db_profile}
+    """
+}
+
+process SSU_EXTRACT {
+    tag "$root"
+    label 'ssuextract'
+    conda "conda-forge::pixi"
+    publishDir "${params.outdir}/${root}_ssuextract", mode: params.publish_mode
+
+    input:
+    tuple val(root), path(mylo_assembly)
+    path install_dir
+
+    output:
+    tuple val(root), path("results"), emit: results_dir
+    path "results/cmsearch_summary.tsv", emit: summary, optional: true
+    path "results/extracted/*.fna", emit: extracted_fastas, optional: true
+
+    script:
+    def tree_flag = params.ssuextract_tree_classification ? '--tree_classification' : ''
+    """
+    cd "${install_dir}"
+    pixi run ssuextract -q "\$OLDPWD/${mylo_assembly}" --outdir "\$OLDPWD/results" ${tree_flag}
+    """
+}
+
+workflow SSU_EXTRACT_ALL {
+    take:
+    assembly   // tuple(root, mylo_assembly)
+
+    main:
+    SSUEXTRACT_SETUP()
+    SSU_EXTRACT(assembly, SSUEXTRACT_SETUP.out.install_dir.first())
+
+    emit:
+    results_dir = SSU_EXTRACT.out.results_dir
+    summary     = SSU_EXTRACT.out.summary
+}
 
 // ---- Rfam RF01960 (SSU_rRNA_eukarya) covariance model, downloaded once ----
 process CM_MODEL {
