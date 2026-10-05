@@ -1,4 +1,19 @@
+process GVCLASS_SETUP {
+    label 'gvclass'
+    conda "conda-forge::git conda-forge::pixi"
+    storeDir "${params.db_dir}"
 
+    output:
+    path "gvclass_install", emit: install_dir
+
+    script:
+    """
+    git clone ${params.gvclass_repo_url} gvclass_install
+    cd gvclass_install
+    pixi install --frozen
+    pixi run setup-db
+    """
+}
 // ---- .fa -> .fna copy/rename, with oversized bins subsampled via `gt splitfasta` ----
 // Previously: bins over params.gvclass_max_bin_size_mb were excluded entirely.
 // Now: they're split into multiple smaller files (each under the size limit)
