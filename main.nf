@@ -25,7 +25,8 @@ include { CHECKM2_QC }       from './modules/checkm2.nf'
 include { BUSCO_QC }         from './modules/busco.nf'
 include { GTDBTK_CLASSIFY }  from './modules/gtdbtk.nf'
 include { GVCLASS_TAXONOMY } from './modules/gvclass.nf'
-include { CMSEARCH_EUK, SSU_EXTRACT_ALL } from './modules/cmsearch.nf'
+include { CMSEARCH_EUK }     from './modules/cmsearch.nf'
+include { SSU_EXTRACT_ALL }  from './modules/cmsearch.nf'
 
 workflow {
 
