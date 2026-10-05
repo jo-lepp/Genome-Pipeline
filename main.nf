@@ -146,4 +146,5 @@ workflow {
         } else {
             CMSEARCH_EUK(ch_assembly)
         }
+    }
 }
