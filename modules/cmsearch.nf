@@ -30,7 +30,7 @@ process SSU_EXTRACT {
     tag "$root"
     label 'ssuextract'
     conda "conda-forge::pixi"
-    publishDir "${params.outdir}/${root}_ssuextract", mode: params.publish_mode
+    publishDir { "${params.outdir}/${root}_ssuextract" }, mode: params.publish_mode
 
     input:
     tuple val(root), path(mylo_assembly)
