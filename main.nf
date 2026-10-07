@@ -29,7 +29,18 @@ include { CMSEARCH_EUK }     from './modules/cmsearch.nf'
 include { SSU_EXTRACT_ALL }  from './modules/cmsearch.nf'
 
 workflow {
+    def asBool = { v -> (v instanceof Boolean) ? v : v.toString().trim().toLowerCase() == 'true' }
 
+    params.run_metabat2 = asBool(params.run_metabat2)
+    params.run_semibin2 = asBool(params.run_semibin2)
+    params.run_remag    = asBool(params.run_remag)
+    params.run_gtdbtk   = asBool(params.run_gtdbtk)
+    params.run_gvclass  = asBool(params.run_gvclass)
+    params.run_cmsearch = asBool(params.run_cmsearch)
+
+    if (!(params.read_type in ['hifi', 'ont'])) {
+        error("params.read_type must be 'hifi' or 'ont', got: '${params.read_type}'")
+    }
     if (!(params.read_type in ['hifi', 'ont'])) {
         exit 1, "params.read_type must be 'hifi' or 'ont', got: '${params.read_type}'"
     }
