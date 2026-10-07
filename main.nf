@@ -29,14 +29,12 @@ include { CMSEARCH_EUK }     from './modules/cmsearch.nf'
 include { SSU_EXTRACT_ALL }  from './modules/cmsearch.nf'
 
 workflow {
-    def asBool = { v -> (v instanceof Boolean) ? v : v.toString().trim().toLowerCase() == 'true' }
-
-    params.run_metabat2 = asBool(params.run_metabat2)
-    params.run_semibin2 = asBool(params.run_semibin2)
-    params.run_remag    = asBool(params.run_remag)
-    params.run_gtdbtk   = asBool(params.run_gtdbtk)
-    params.run_gvclass  = asBool(params.run_gvclass)
-    params.run_cmsearch = asBool(params.run_cmsearch)
+    params.run_metabat2 = (params.run_metabat2 instanceof Boolean) ? params.run_metabat2 : params.run_metabat2.toString().trim().toLowerCase() == 'true'
+    params.run_semibin2 = (params.run_semibin2 instanceof Boolean) ? params.run_semibin2 : params.run_semibin2.toString().trim().toLowerCase() == 'true'
+    params.run_remag    = (params.run_remag    instanceof Boolean) ? params.run_remag    : params.run_remag.toString().trim().toLowerCase() == 'true'
+    params.run_gtdbtk   = (params.run_gtdbtk   instanceof Boolean) ? params.run_gtdbtk   : params.run_gtdbtk.toString().trim().toLowerCase() == 'true'
+    params.run_gvclass  = (params.run_gvclass  instanceof Boolean) ? params.run_gvclass  : params.run_gvclass.toString().trim().toLowerCase() == 'true'
+    params.run_cmsearch = (params.run_cmsearch instanceof Boolean) ? params.run_cmsearch : params.run_cmsearch.toString().trim().toLowerCase() == 'true'
 
     if (!(params.read_type in ['hifi', 'ont'])) {
         error("params.read_type must be 'hifi' or 'ont', got: '${params.read_type}'")
