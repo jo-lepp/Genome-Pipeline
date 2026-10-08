@@ -21,6 +21,15 @@ process SSUEXTRACT_SETUP {
     """
     git clone ${params.ssuextract_repo_url} ssuextract_install
     cd ssuextract_install
+
+    # SSUextract is its own nested Nextflow pipeline with its own internal
+    # per-process time limit (config/base.config), separate from anything
+    # in OUR nextflow.config - raising our own threads_cmsearch has no
+    # effect on it. Strip the time limit so long BLAST/annotation steps
+    # on large assemblies aren't killed mid-run by the inner pipeline's
+    # own unrelated timeout.
+    sed -i '/^[[:space:]]*time[[:space:]]*=/s/^/# /' config/base.config
+
     pixi install --frozen
     pixi run setup --database_profile ${params.ssuextract_db_profile}
     """
