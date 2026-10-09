@@ -28,7 +28,7 @@ process SSUEXTRACT_SETUP {
     # effect on it. Strip the time limit so long BLAST/annotation steps
     # on large assemblies aren't killed mid-run by the inner pipeline's
     # own unrelated timeout.
-    sed -i '/^[[:space:]]*time[[:space:]]*=/s/^/# /' config/base.config
+    sed -i '/^[[:space:]]*time[[:space:]]*=/d' config/base.config
 
     pixi install --frozen
     pixi run setup --database_profile ${params.ssuextract_db_profile}
