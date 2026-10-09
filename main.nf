@@ -29,12 +29,12 @@ include { CMSEARCH_EUK }     from './modules/cmsearch.nf'
 include { SSU_EXTRACT_ALL }  from './modules/cmsearch.nf'
 
 workflow {
-    params.run_metabat2 = (params.run_metabat2 instanceof Boolean) ? params.run_metabat2 : params.run_metabat2.toString().trim().toLowerCase() == 'true'
-    params.run_semibin2 = (params.run_semibin2 instanceof Boolean) ? params.run_semibin2 : params.run_semibin2.toString().trim().toLowerCase() == 'true'
-    params.run_remag    = (params.run_remag    instanceof Boolean) ? params.run_remag    : params.run_remag.toString().trim().toLowerCase() == 'true'
-    params.run_gtdbtk   = (params.run_gtdbtk   instanceof Boolean) ? params.run_gtdbtk   : params.run_gtdbtk.toString().trim().toLowerCase() == 'true'
-    params.run_gvclass  = (params.run_gvclass  instanceof Boolean) ? params.run_gvclass  : params.run_gvclass.toString().trim().toLowerCase() == 'true'
-    params.run_cmsearch = (params.run_cmsearch instanceof Boolean) ? params.run_cmsearch : params.run_cmsearch.toString().trim().toLowerCase() == 'true'
+   def run_metabat2 = (params.run_metabat2 instanceof Boolean) ? params.run_metabat2 : params.run_metabat2.toString().trim().toLowerCase() == 'true'
+    def run_semibin2 = (params.run_semibin2 instanceof Boolean) ? params.run_semibin2 : params.run_semibin2.toString().trim().toLowerCase() == 'true'
+    def run_remag    = (params.run_remag    instanceof Boolean) ? params.run_remag    : params.run_remag.toString().trim().toLowerCase() == 'true'
+    def run_gtdbtk   = (params.run_gtdbtk   instanceof Boolean) ? params.run_gtdbtk   : params.run_gtdbtk.toString().trim().toLowerCase() == 'true'
+    def run_gvclass  = (params.run_gvclass  instanceof Boolean) ? params.run_gvclass  : params.run_gvclass.toString().trim().toLowerCase() == 'true'
+    def run_cmsearch = (params.run_cmsearch instanceof Boolean) ? params.run_cmsearch : params.run_cmsearch.toString().trim().toLowerCase() == 'true'
 
     println "DEBUG after coercion: run_gtdbtk=${params.run_gtdbtk} (${params.run_gtdbtk.class})"
 
@@ -122,7 +122,7 @@ workflow {
 
     // ================= 3. BINNING (metabat2 / semibin2 / remag) =================
     ch_assembly_bam = ch_assembly.join(MAPPING.out.bam)
-    BINNING(ch_assembly_bam)
+    BINNING(ch_assembly_bam, run_metabat2, run_semibin2, run_remag)
 
     // ================= 4. DEREPLICATION (metabat + semibin, NOT remag) =================
     DEREPLICATION(BINNING.out.metabat_bins, BINNING.out.semibin_bins)
@@ -137,12 +137,12 @@ workflow {
 
     println "DEBUG at gtdbtk check: run_gtdbtk=${params.run_gtdbtk} (${params.run_gtdbtk.class})"
 
-    if (params.run_gtdbtk) {
+    if (run_gtdbtk) {
         GTDBTK_CLASSIFY(DEREPLICATION.out.derep_dir)
     }
 
     // ================= 8. GVCLASS (all bin sets, including remag) =================
-    if (params.run_gvclass) {
+    if (run_gvclass) {
         GVCLASS_TAXONOMY(
             DEREPLICATION.out.derep_dir,
             BINNING.out.remag_bins_dir,
@@ -151,7 +151,7 @@ workflow {
     }
 
     // ================= fast mode: cmsearch instead of full taxonomy =================
-    if (params.run_cmsearch) {
+    if (run_cmsearch) {
         if (!(params.fast_mode_tool in ['ssu_extract', 'cmsearch'])) {
             error("params.fast_mode_tool must be 'ssu_extract' or 'cmsearch', got: '${params.fast_mode_tool}'")
         }
