@@ -36,6 +36,8 @@ workflow {
     params.run_gvclass  = (params.run_gvclass  instanceof Boolean) ? params.run_gvclass  : params.run_gvclass.toString().trim().toLowerCase() == 'true'
     params.run_cmsearch = (params.run_cmsearch instanceof Boolean) ? params.run_cmsearch : params.run_cmsearch.toString().trim().toLowerCase() == 'true'
 
+    println "DEBUG after coercion: run_gtdbtk=${params.run_gtdbtk} (${params.run_gtdbtk.class})"
+
     if (!(params.read_type in ['hifi', 'ont'])) {
         error("params.read_type must be 'hifi' or 'ont', got: '${params.read_type}'")
     }
@@ -132,6 +134,9 @@ workflow {
     BUSCO_QC(DEREPLICATION.out.derep_dir, BINNING.out.remag_bins_dir)
 
     // ================= 7. GTDB-TK (metabat + semibin, NOT remag) =================
+
+    println "DEBUG at gtdbtk check: run_gtdbtk=${params.run_gtdbtk} (${params.run_gtdbtk.class})"
+
     if (params.run_gtdbtk) {
         GTDBTK_CLASSIFY(DEREPLICATION.out.derep_dir)
     }
