@@ -92,7 +92,10 @@ process REMAG {
  */
 workflow BINNING {
     take:
-    ch_assembly_bam   // tuple(root, mylo_assembly, bam, bai)
+    ch_assembly_bam
+    run_metabat2
+    run_semibin2
+    run_remag
 
     main:
     ch_metabat_bins   = Channel.empty()
@@ -100,7 +103,7 @@ workflow BINNING {
     ch_remag_bins     = Channel.empty()
     ch_remag_bins_dir = Channel.empty()
 
-    if (params.run_metabat2) {
+    if (run_metabat2) {
         DEPTH(ch_assembly_bam.map { root, assembly, bam, bai -> tuple(root, bam, bai) })
 
         ch_metabat_in = ch_assembly_bam
@@ -111,7 +114,7 @@ workflow BINNING {
         ch_metabat_bins = METABAT2.out.bins
     }
 
-    if (params.run_semibin2) {
+    if (run_semibin2) {
         // the full set of models this pipeline knows about and their flags
         def all_models = [
             soil:   '--environment soil',
@@ -133,7 +136,7 @@ workflow BINNING {
         ch_semibin_bins = SEMIBIN2.out.bins
     }
 
-    if (params.run_remag) {
+    if (run_remag) {
         REMAG(ch_assembly_bam)
         ch_remag_bins     = REMAG.out.bins
         ch_remag_bins_dir = REMAG.out.bins_dir
