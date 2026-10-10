@@ -1,70 +1,88 @@
-workflow BINNING {
+/*
+ * DAS_Tool - integrates bins from multiple binning methods (metabat2,
+ * SemiBin2 models, REMAG) and selects a non-redundant, optimized set
+ * using its own single-copy-gene scoring - a cross-method consensus
+ * step, distinct from dRep (which only dereplicates WITHIN one method's
+ * own output). Consumes BINNING's raw bin sets directly, independent
+ * of DEREPLICATION/dRep.
+ *
+ * Reference: Sieber et al. 2018, Nature Microbiology.
+ * https://github.com/cmks/DAS_Tool
+ */
+process DAS_TOOL {
+    tag "$root"
+    label 'binning'
+    conda "bioconda::das_tool"
+    publishDir { "${params.outdir}/${root}_dastool" }, mode: params.publish_mode
+
+    input:
+    tuple val(root), val(labels), path(bin_dirs, stageAs: 'binset_*'), path(assembly)
+
+    output:
+    tuple val(root), path("dastool_DASTool_summary.tsv"),        emit: summary
+    tuple val(root), path("dastool_DASTool_contigs2bin.tsv"),    emit: contigs2bin
+    path "dastool_allBins.eval",                                 emit: bin_evals, optional: true
+    path "DASTool_bins",                                         emit: bins_dir,  optional: true
+
+    script:
+    def label_str = labels.join(',')
+    """
+    mkdir -p contig2bin_tables
+
+    # DAS_Tool's own helper script needs plain (uncompressed) fasta per
+    # bin set - metabat2/remag bins are already .fa, but SemiBin2's are
+    # .fa.gz, so decompress a working copy of any bin set that needs it
+    # before converting to a contigs2bin table.
+    i=0
+    tables=""
+    for d in ${bin_dirs.join(' ')}; do
+        label=\$(echo "${label_str}" | cut -d',' -f\$((i+1)))
+
+        if ls "\$d"/*.fa.gz >/dev/null 2>&1; then
+            mkdir -p "unzipped_\$i"
+            for f in "\$d"/*.fa.gz; do
+                gunzip -c "\$f" > "unzipped_\$i/\$(basename "\${f%.gz}")"
+            done
+            src_dir="unzipped_\$i"
+        else
+            src_dir="\$d"
+        fi
+
+        Fasta_to_Contigs2Bin.sh -i "\$src_dir" -e fa > "contig2bin_tables/\${label}.tsv"
+        tables="\${tables}\${tables:+,}contig2bin_tables/\${label}.tsv"
+        i=\$((i+1))
+    done
+
+    DAS_Tool -i "\$tables" \\
+        -l "${label_str}" \\
+        -c "${assembly}" \\
+        -o dastool \\
+        --search_engine diamond \\
+        --threads ${params.threads_dastool} \\
+        --write_bins \\
+        --write_bin_evals
+    """
+}
+
+/*
+ * Subworkflow: groups whichever bin sets BINNING actually produced by
+ * sample, pairs each sample with its assembly, and runs DAS_Tool once
+ * per sample across all of that sample's bin sets at once.
+ */
+workflow DASTOOL_INTEGRATION {
     take:
-    ch_assembly_bam
-    run_metabat2
-    run_semibin2
-    run_remag
+    all_bin_sets   // tuple(root, label, bin_dir) - from BINNING.out.all_bin_sets
+    assembly       // tuple(root, assembly)       - e.g. ch_assembly
 
     main:
-    ch_metabat_bins     = Channel.empty()
-    ch_metabat_bins_dir = Channel.empty()
-    ch_semibin_bins     = Channel.empty()
-    ch_semibin_bins_dir = Channel.empty()
-    ch_remag_bins       = Channel.empty()
-    ch_remag_bins_dir   = Channel.empty()
+    ch_grouped = all_bin_sets
+        .groupTuple(by: 0)   // -> tuple(root, [label, label, ...], [dir, dir, ...])
+        .join(assembly)      // -> tuple(root, labels, dirs, assembly)
 
-    if (run_metabat2) {
-        DEPTH(ch_assembly_bam.map { root, assembly, bam, bai -> tuple(root, bam, bai) })
-
-        ch_metabat_in = ch_assembly_bam
-            .map { root, assembly, bam, bai -> tuple(root, assembly) }
-            .join(DEPTH.out.depth)
-
-        METABAT2(ch_metabat_in)
-        ch_metabat_bins     = METABAT2.out.bins
-        ch_metabat_bins_dir = METABAT2.out.bins_dir
-    }
-
-    if (run_semibin2) {
-        def all_models = [
-            soil:   '--environment soil',
-            self:   '--self-supervised',
-            global: '--environment global'
-        ]
-
-        def selected = params.semibin_models.split(',')*.trim()
-        def unknown  = selected - all_models.keySet().toList()
-        if (unknown) {
-            error("Unknown semibin_models entry: ${unknown.join(', ')}. Valid options: ${all_models.keySet().join(', ')}")
-        }
-
-        ch_semibin_models = Channel.fromList(selected.collect { model -> [model, all_models[model]] })
-
-        ch_semibin_in = ch_assembly_bam.combine(ch_semibin_models)
-        SEMIBIN2(ch_semibin_in)
-        ch_semibin_bins     = SEMIBIN2.out.bins
-        ch_semibin_bins_dir = SEMIBIN2.out.bins_dir
-    }
-
-    if (run_remag) {
-        REMAG(ch_assembly_bam)
-        ch_remag_bins     = REMAG.out.bins
-        ch_remag_bins_dir = REMAG.out.bins_dir
-    }
-
-    // ---- unified (root, label, dir) stream for DAS_Tool, built from the
-    // already-safe ch_* variables above (never touches PROCESS.out
-    // directly) - so a disabled binner just contributes an empty channel
-    // via .mix(), instead of crashing on an uninvoked process ----
-    ch_metabat_labeled = ch_metabat_bins_dir.map { root, dir -> tuple(root, 'metabat', dir) }
-    ch_semibin_labeled = ch_semibin_bins_dir.map { root, model, dir -> tuple(root, model, dir) }
-    ch_remag_labeled   = ch_remag_bins_dir.map   { root, dir -> tuple(root, 'remag', dir) }
-    ch_all_bin_sets    = ch_metabat_labeled.mix(ch_semibin_labeled).mix(ch_remag_labeled)
+    DAS_TOOL(ch_grouped)
 
     emit:
-    metabat_bins   = ch_metabat_bins
-    semibin_bins   = ch_semibin_bins
-    remag_bins     = ch_remag_bins
-    remag_bins_dir = ch_remag_bins_dir
-    all_bin_sets   = ch_all_bin_sets
+    summary     = DAS_TOOL.out.summary
+    contigs2bin = DAS_TOOL.out.contigs2bin
+    bins_dir    = DAS_TOOL.out.bins_dir
 }
