@@ -1,3 +1,11 @@
+/*
+ * Mirrors the "#binning (metabat2, semibin, remag)" block from the .def
+ * file. Each binner now gets its own conda env (built automatically by
+ * Nextflow) instead of one shared "binners" env, and each one can be
+ * turned on/off independently via params. SemiBin2's three models can
+ * also be selected individually, instead of always running all three.
+ */
+
 // ---- jgi_summarize_bam_contig_depths (ships with the metabat2 package) ----
 process DEPTH {
     tag "$root"
@@ -86,22 +94,28 @@ process REMAG {
 
 /*
  * Subworkflow: takes the assembly + sorted BAM for one sample and runs
- * whichever binners params.run_metabat2 / run_semibin2 / run_remag ask
- * for. When SemiBin2 is on, params.semibin_models controls *which* of
- * the three models actually run.
+ * whichever binners run_metabat2 / run_semibin2 / run_remag ask for
+ * (passed in as plain arguments, not read from params - see the
+ * boolean-coercion note in main.nf for why). When SemiBin2 is on,
+ * params.semibin_models controls *which* of the three models run.
+ *
+ * Also builds a unified (root, label, dir) stream of every raw bin set
+ * that actually ran, for DAS_Tool to consume independently of dRep.
  */
 workflow BINNING {
     take:
-    ch_assembly_bam
+    ch_assembly_bam   // tuple(root, mylo_assembly, bam, bai)
     run_metabat2
     run_semibin2
     run_remag
 
     main:
-    ch_metabat_bins   = Channel.empty()
-    ch_semibin_bins   = Channel.empty()
-    ch_remag_bins     = Channel.empty()
-    ch_remag_bins_dir = Channel.empty()
+    ch_metabat_bins     = Channel.empty()
+    ch_metabat_bins_dir = Channel.empty()
+    ch_semibin_bins     = Channel.empty()
+    ch_semibin_bins_dir = Channel.empty()
+    ch_remag_bins       = Channel.empty()
+    ch_remag_bins_dir   = Channel.empty()
 
     if (run_metabat2) {
         DEPTH(ch_assembly_bam.map { root, assembly, bam, bai -> tuple(root, bam, bai) })
@@ -111,7 +125,8 @@ workflow BINNING {
             .join(DEPTH.out.depth)
 
         METABAT2(ch_metabat_in)
-        ch_metabat_bins = METABAT2.out.bins
+        ch_metabat_bins     = METABAT2.out.bins
+        ch_metabat_bins_dir = METABAT2.out.bins_dir
     }
 
     if (run_semibin2) {
@@ -133,7 +148,8 @@ workflow BINNING {
 
         ch_semibin_in = ch_assembly_bam.combine(ch_semibin_models)
         SEMIBIN2(ch_semibin_in)
-        ch_semibin_bins = SEMIBIN2.out.bins
+        ch_semibin_bins     = SEMIBIN2.out.bins
+        ch_semibin_bins_dir = SEMIBIN2.out.bins_dir
     }
 
     if (run_remag) {
@@ -142,9 +158,13 @@ workflow BINNING {
         ch_remag_bins_dir = REMAG.out.bins_dir
     }
 
-    ch_metabat_labeled = METABAT2.out.bins_dir.map { root, dir -> tuple(root, 'metabat', dir) }
-    ch_semibin_labeled = SEMIBIN2.out.bins_dir.map { root, model, dir -> tuple(root, model, dir) }
-    ch_remag_labeled   = REMAG.out.bins_dir.map { root, dir -> tuple(root, 'remag', dir) }
+    // ---- unified (root, label, dir) stream for DAS_Tool, built only from
+    // the already-safe ch_* variables above - never touches PROCESS.out
+    // directly, so a disabled binner just contributes an empty channel
+    // via .mix() instead of crashing on an uninvoked process ----
+    ch_metabat_labeled = ch_metabat_bins_dir.map { root, dir -> tuple(root, 'metabat', dir) }
+    ch_semibin_labeled = ch_semibin_bins_dir.map { root, model, dir -> tuple(root, model, dir) }
+    ch_remag_labeled   = ch_remag_bins_dir.map   { root, dir -> tuple(root, 'remag', dir) }
     ch_all_bin_sets    = ch_metabat_labeled.mix(ch_semibin_labeled).mix(ch_remag_labeled)
 
     emit:
