@@ -5,6 +5,7 @@
 1. MYLOASM                     - long-read assembly (skipped if --assembly given)
 2. MAPPING                     - minimap2 + samtools sort/index
 3. BINNING                     - metabat2 / semibin2 (configurable models) / remag
+   DASTOOL_INTEGRATION          - cross-method bin consensus (ALL bin sets)  [toggle]
 4. DEREPLICATION                - dRep (metabat + semibin only, NOT remag)
 5. CHECKM2_QC                   - bacterial completeness/contamination (NOT remag)
 6. BUSCO_QC                     - eukaryotic QC (ALL bin sets, including remag)
@@ -13,8 +14,9 @@
    fast mode (SSU_EXTRACT_ALL or CMSEARCH_EUK) - alternative to 7 & 8      [toggle]
 ```
 
-Steps 7, 8, and the fast-mode step are independently toggleable — run any
-combination of them.
+Steps 7, 8, DAS_Tool, and the fast-mode step are independently toggleable
+— run any combination of them. The pipeline prints its total run time
+when it finishes — see [Runtime announcement](#runtime-announcement) below.
 
 ## Requirements
 
@@ -35,6 +37,7 @@ modules/
   myloasm.nf              assembly (params.read_type: hifi/ont preset)
   mapping.nf               minimap2 + samtools sort/index (params.read_type preset)
   binning.nf               DEPTH, METABAT2, SEMIBIN2, REMAG + BINNING subworkflow
+  dastool.nf               DAS_TOOL + DASTOOL_INTEGRATION subworkflow (cross-method bin consensus)
   drep.nf                  CHECKM1_DB, DREP + DEREPLICATION subworkflow
   checkm2.nf               CHECKM2_DB, CHECKM2 + CHECKM2_QC subworkflow
   busco.nf                 UNZIP_BINS, BUSCO + BUSCO_QC subworkflow
@@ -56,6 +59,8 @@ modules/
 | `db_dir` | `'refdbs'` | **persistent, shared** location for one-time reference database/tool downloads (CheckM1, CheckM2, GTDB-Tk, GVClass, SSUextract) — deliberately separate from `outdir` so every run/sample reuses the same data instead of re-downloading. Relative to wherever you launch `nextflow` from — see the callout below |
 | `run_metabat2` / `run_semibin2` / `run_remag` | `true` | toggle each binner independently |
 | `semibin_models` | `'soil,self,global'` | comma-separated subset of SemiBin2 models to run |
+| `run_dastool` | `true` | toggle DAS_Tool's cross-method bin consensus step. See [DAS_Tool](#das_tool-cross-method-bin-consensus) below |
+| `threads_dastool` | `16` | threads passed to DAS_Tool's `--threads` flag |
 | `run_gtdbtk` / `run_gvclass` | `true` | toggle full taxonomic classification steps |
 | `run_cmsearch` | `false` | toggle the fast-mode alternative to GTDB-Tk/GVClass |
 | `fast_mode_tool` | `'ssu_extract'` | `'ssu_extract'` (default, full taxonomy via SSUextract) or `'cmsearch'` (legacy, eukaryote-only, exact `fast_mode.def` parity). See [Fast mode](#fast-mode-ssuextract-vs-legacy-cmsearch) below |
@@ -91,9 +96,9 @@ to guarantee the same location regardless of where you start from:
 
 ```csv
 fastq,assembly
-/data/sample01.fastq.gz,
-/data/sample02.fastq.gz,/data/sample02_hifiasm_assembly.fa
-/data/sample03.fastq.gz,
+data/sample01.fastq.gz,
+data/sample02.fastq.gz,data/sample02_hifiasm_assembly.fa
+data/sample03.fastq.gz,
 ```
 
 Leave `assembly` blank for any row that needs `MYLOASM` run; fill it in
@@ -175,13 +180,58 @@ half, which `gt splitfasta` never does. That part is still passed through
 to GVClass (rather than silently dropped), but flagged with a `[WARNING:
 ...]` note in the summary.
 
+## DAS_Tool: cross-method bin consensus
+
+[DAS_Tool](https://github.com/cmks/DAS_Tool) (Sieber et al. 2018) integrates
+the bins from every binning method that actually ran for a sample — metabat2,
+whichever SemiBin2 models were selected, and REMAG — and picks an optimized,
+non-redundant set using its own single-copy-gene scoring. This is distinct
+from `DEREPLICATION`/dRep: dRep only dereplicates *within* one method's own
+output, while DAS_Tool picks the best representative bin *across* different
+methods for the same organism. The two run independently and in parallel —
+DAS_Tool consumes `BINNING`'s raw bin sets directly, not dRep's filtered output.
+
+DAS_Tool automatically adapts to however many bin sets a given run actually
+produced — if `run_remag` is off or `semibin_models` is trimmed down to one
+model, DAS_Tool simply integrates whatever's left (as few as two methods),
+the same "adapts automatically" pattern used throughout this pipeline.
+
+Output lands in `<outdir>/<root>_dastool/`:
+- `dastool_DASTool_summary.tsv` — quality/completeness of the selected bins
+- `dastool_DASTool_contigs2bin.tsv` — which contig ended up in which final bin
+- `dastool_allBins.eval` — quality evaluation of every input bin, across all methods
+- `DASTool_bins/` — the selected bins themselves, as fasta files
+
+```bash
+# disable DAS_Tool for a faster run
+--run_dastool false
+```
+
+**One thing to watch on a first run**: DAS_Tool's bioconda package is
+expected to auto-locate its bundled single-copy-gene database, so
+`--dbDirectory` isn't set explicitly. If it fails with a
+database/dependency-not-found error, that flag may need to be added
+pointing at wherever conda installed it (e.g.
+`$CONDA_PREFIX/share/das_tool-*/db`) — a known rough edge in DAS_Tool's
+own documentation, not something specific to this pipeline.
+
 ## Usage examples
+
+**All paths below are relative**, matching this repo's own convention
+(`data/` for inputs, `results/` for outputs, `refdbs/` for the shared
+database cache). As covered in [Reference database
+location](#reference-database-location-db_dir), a relative path resolves
+relative to wherever you run `nextflow run` from — so these examples
+assume you're launching from the repo root (`cd` into it first) every
+time. Use an absolute path instead for anything that needs to resolve
+the same way regardless of your current directory (a script, a cron
+job, launching from different locations).
 
 **1. Basic single-sample run — full pipeline, default settings**
 ```bash
 nextflow run main.nf \
-  --input_fgz /data/sample01.fastq.gz \
-  --outdir    /results/sample01 \
+  --input_fgz data/sample01.fastq.gz \
+  --outdir    results/sample01 \
   --db_dir    refdbs \
   -resume
 ```
@@ -189,9 +239,9 @@ nextflow run main.nf \
 **2. Single sample with an explicit name**
 ```bash
 nextflow run main.nf \
-  --input_fgz /data/raw_reads_batch3_042.fastq.gz \
+  --input_fgz data/raw_reads_batch3_042.fastq.gz \
   --nametag   patient_A \
-  --outdir    /results/patient_A \
+  --outdir    results/patient_A \
   --db_dir    refdbs \
   -resume
 ```
@@ -199,9 +249,9 @@ nextflow run main.nf \
 **3. Pre-assembled input — skip MYLOASM**
 ```bash
 nextflow run main.nf \
-  --input_fgz /data/sample02.fastq.gz \
-  --assembly  /data/sample02_hifiasm_assembly.fa \
-  --outdir    /results/sample02 \
+  --input_fgz data/sample02.fastq.gz \
+  --assembly  data/sample02_hifiasm_assembly.fa \
+  --outdir    results/sample02 \
   --db_dir    refdbs \
   -resume
 ```
@@ -210,9 +260,9 @@ Still needs the reads (for mapping/depth calc), but `MYLOASM` never runs.
 **4. Oxford Nanopore reads instead of PacBio HiFi**
 ```bash
 nextflow run main.nf \
-  --input_fgz /data/ont_sample.fastq.gz \
+  --input_fgz data/ont_sample.fastq.gz \
   --read_type ont \
-  --outdir    /results/ont_sample \
+  --outdir    results/ont_sample \
   --db_dir    refdbs \
   -resume
 ```
@@ -220,8 +270,8 @@ nextflow run main.nf \
 **5. Fast mode — skip GTDB-Tk/GVClass, run SSUextract instead**
 ```bash
 nextflow run main.nf \
-  --input_fgz /data/sample01.fastq.gz \
-  --outdir    /results/sample01_fast \
+  --input_fgz data/sample01.fastq.gz \
+  --outdir    results/sample01_fast \
   --db_dir    refdbs \
   --run_gtdbtk   false \
   --run_gvclass  false \
@@ -232,8 +282,8 @@ nextflow run main.nf \
 **6. Fast mode, legacy single-domain cmsearch**
 ```bash
 nextflow run main.nf \
-  --input_fgz /data/sample01.fastq.gz \
-  --outdir    /results/sample01_fast_legacy \
+  --input_fgz data/sample01.fastq.gz \
+  --outdir    results/sample01_fast_legacy \
   --db_dir    refdbs \
   --run_gtdbtk     false \
   --run_gvclass    false \
@@ -245,8 +295,8 @@ nextflow run main.nf \
 **7. Only a subset of binners, and only some SemiBin2 models**
 ```bash
 nextflow run main.nf \
-  --input_fgz /data/sample01.fastq.gz \
-  --outdir    /results/sample01 \
+  --input_fgz data/sample01.fastq.gz \
+  --outdir    results/sample01 \
   --db_dir    refdbs \
   --run_remag       false \
   --semibin_models  soil,global \
@@ -256,8 +306,8 @@ nextflow run main.nf \
 **8. Multi-sample batch run via samplesheet**
 ```bash
 nextflow run main.nf \
-  --samplesheet /data/batch1_samples.csv \
-  --outdir      /results/batch1 \
+  --samplesheet data/batch1_samples.csv \
+  --outdir      results/batch1 \
   --db_dir      refdbs \
   -resume
 ```
@@ -265,8 +315,8 @@ nextflow run main.nf \
 **9. Combining samplesheet mode with fast mode and a binner subset**
 ```bash
 nextflow run main.nf \
-  --samplesheet     /data/batch1_samples.csv \
-  --outdir          /results/batch1_fast \
+  --samplesheet     data/batch1_samples.csv \
+  --outdir          results/batch1_fast \
   --db_dir          refdbs \
   --run_gtdbtk      false \
   --run_gvclass     false \
@@ -280,8 +330,26 @@ nextflow run main.nf \
 # some tasks failed partway through - just re-run the exact same command;
 # -resume skips everything that already completed successfully and only
 # retries what failed or never ran
-nextflow run main.nf --samplesheet /data/batch1_samples.csv --outdir /results/batch1 --db_dir refdbs -resume
+nextflow run main.nf --samplesheet data/batch1_samples.csv --outdir results/batch1 --db_dir refdbs -resume
 ```
+
+## Runtime announcement
+
+Every run prints a short summary when it finishes, success or failure,
+via Nextflow's `workflow.onComplete` hook:
+
+```
+Pipeline finished at : 2026-10-09T17:42:11.123-04:00
+Total run time        : 4h 32m 10s
+Success               : true
+Exit status           : 0
+```
+
+`Total run time` is Nextflow's own `workflow.duration` — wall-clock time
+for the whole invocation, not CPU time summed across tasks. On a
+`-resume`'d run, this reflects only the time this particular invocation
+actually spent running (cached tasks don't add to it), not the combined
+time across every attempt that led up to a finished result.
 
 ## Notes
 
@@ -313,3 +381,54 @@ nextflow run main.nf --samplesheet /data/batch1_samples.csv --outdir /results/ba
 - `GVCLASS_SETUP` and `SSUEXTRACT_SETUP` both clone a git repo and build
   a pixi-managed environment (not a conda package) into `db_dir` once,
   the same `storeDir`-cached way as the other databases.
+- **GVClass's and SSUextract's own pixi-managed Python environments can
+  fail with `CERTIFICATE_VERIFY_FAILED`** if their dependency lock didn't
+  pull in `ca-certificates`. Both their resource labels include a
+  `beforeScript` that points Python at `certifi`'s bundle as a fallback
+  — harmless no-op if the environment already has valid certs.
+
+### Troubleshooting: a task fails with no error output at all
+
+If a task shows an unusual exit status (a dash `-` instead of a number)
+and both `.command.err` and `.command.log` in its work directory are
+completely empty — not short, genuinely empty — that's not the task
+failing on its own logic. It's the signature of the **outer Nextflow
+process itself having been killed or crashed** while that task was
+still running, orphaning it before it had a chance to write anything.
+
+Common causes: editing/recompiling pipeline files while a run is still
+in progress, a dropped SSH session that wasn't inside `tmux`/`screen`, a
+VM reboot, or manually killing the wrong process.
+
+**Confirm this is what happened:**
+```bash
+ps aux | grep nextflow
+```
+If the only match is the `grep` command matching its own search term
+(no real `nextflow run` process listed), the pipeline isn't running at
+all anymore — that's the confirmation.
+
+**The fix is simply to re-launch with `-resume`:**
+```bash
+nextflow run main.nf --input_fgz ... --outdir ... --db_dir refdbs -resume
+```
+Everything that completed successfully before the crash is reused from
+cache. The one task that was actually running when the crash happened
+will need to re-run from scratch (Nextflow's caching works at the
+whole-task level, not mid-task) — this is expected, not a sign of a
+deeper problem, especially for long-running steps like `SSU_EXTRACT` or
+`GVCLASS` where getting partway through before a crash is likely.
+
+### Troubleshooting: DAS_Tool fails with a database/dependency error
+
+DAS_Tool's bioconda package is expected to locate its own bundled
+single-copy-gene database automatically, so `DAS_TOOL`'s script doesn't
+pass `--dbDirectory` explicitly. If a run fails with a
+database-not-found or dependency-not-found error, this is a documented
+rough edge in DAS_Tool itself (see its own README's "Troubleshooting/
+known issues" section) rather than something specific to this pipeline.
+The fix is to add `--dbDirectory <path>` pointing at wherever conda
+installed it — typically findable with:
+```bash
+find $(conda info --base)/envs -iname "db.zip" -path "*das_tool*" 2>/dev/null
+```
