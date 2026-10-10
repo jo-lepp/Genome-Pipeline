@@ -29,7 +29,7 @@ process METABAT2 {
 
     output:
     tuple val(root), path("bins/*.fa"), emit: bins
-    path "bins", emit: bins_dir
+    tuple val(root), path("bins"), emit: bins_dir
     path "*.txt", emit: metabat_stats
 
     script:
