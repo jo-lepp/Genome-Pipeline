@@ -81,7 +81,7 @@ process CM_MODEL {
 
     script:
     """
-    wget -O RF01960.cm "${params.cm_model_url}"
+    wget -O RF01960.cm "${params.rfam_eukarya_cm_url}"
     """
 }
 
