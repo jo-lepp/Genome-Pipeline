@@ -142,9 +142,15 @@ workflow BINNING {
         ch_remag_bins_dir = REMAG.out.bins_dir
     }
 
+    ch_metabat_labeled = METABAT2.out.bins_dir.map { root, dir -> tuple(root, 'metabat', dir) }
+    ch_semibin_labeled = SEMIBIN2.out.bins_dir.map { root, model, dir -> tuple(root, model, dir) }
+    ch_remag_labeled   = REMAG.out.bins_dir.map { root, dir -> tuple(root, 'remag', dir) }
+    ch_all_bin_sets    = ch_metabat_labeled.mix(ch_semibin_labeled).mix(ch_remag_labeled)
+
     emit:
     metabat_bins   = ch_metabat_bins
     semibin_bins   = ch_semibin_bins
     remag_bins     = ch_remag_bins
     remag_bins_dir = ch_remag_bins_dir
+    all_bin_sets   = ch_all_bin_sets
 }
