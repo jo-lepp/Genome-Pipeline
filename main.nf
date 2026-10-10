@@ -27,14 +27,17 @@ include { GTDBTK_CLASSIFY }  from './modules/gtdbtk.nf'
 include { GVCLASS_TAXONOMY } from './modules/gvclass.nf'
 include { CMSEARCH_EUK }     from './modules/cmsearch.nf'
 include { SSU_EXTRACT_ALL }  from './modules/cmsearch.nf'
+include { DASTOOL_INTEGRATION } from './modules/dastool.nf'
 
 workflow {
-   def run_metabat2 = (params.run_metabat2 instanceof Boolean) ? params.run_metabat2 : params.run_metabat2.toString().trim().toLowerCase() == 'true'
+    def run_metabat2 = (params.run_metabat2 instanceof Boolean) ? params.run_metabat2 : params.run_metabat2.toString().trim().toLowerCase() == 'true'
     def run_semibin2 = (params.run_semibin2 instanceof Boolean) ? params.run_semibin2 : params.run_semibin2.toString().trim().toLowerCase() == 'true'
     def run_remag    = (params.run_remag    instanceof Boolean) ? params.run_remag    : params.run_remag.toString().trim().toLowerCase() == 'true'
     def run_gtdbtk   = (params.run_gtdbtk   instanceof Boolean) ? params.run_gtdbtk   : params.run_gtdbtk.toString().trim().toLowerCase() == 'true'
     def run_gvclass  = (params.run_gvclass  instanceof Boolean) ? params.run_gvclass  : params.run_gvclass.toString().trim().toLowerCase() == 'true'
     def run_cmsearch = (params.run_cmsearch instanceof Boolean) ? params.run_cmsearch : params.run_cmsearch.toString().trim().toLowerCase() == 'true'
+    def run_dastool = (params.run_dastool instanceof Boolean) ? params.run_dastool : params.run_dastool.toString().trim().toLowerCase() == 'true'
+
 
     if (!(params.read_type in ['hifi', 'ont'])) {
         error("params.read_type must be 'hifi' or 'ont', got: '${params.read_type}'")
@@ -121,6 +124,11 @@ workflow {
     // ================= 3. BINNING (metabat2 / semibin2 / remag) =================
     ch_assembly_bam = ch_assembly.join(MAPPING.out.bam)
     BINNING(ch_assembly_bam, run_metabat2, run_semibin2, run_remag)
+
+    // ================= DAS_TOOL (cross-method bin consensus, independent of dRep) =================
+    if (run_dastool) {
+        DASTOOL_INTEGRATION(BINNING.out.all_bin_sets, ch_assembly)
+    }
 
     // ================= 4. DEREPLICATION (metabat + semibin, NOT remag) =================
     DEREPLICATION(BINNING.out.metabat_bins, BINNING.out.semibin_bins)
