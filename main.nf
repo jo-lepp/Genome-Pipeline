@@ -3,7 +3,7 @@
  *      DEFUALT STEPS:
  *   1. MYLOASM            - long-read assembly
  *   2. MAPPING            - minimap2 + samtools sort/index
- *   3. BINNING            - metabat2 / semibin2 (configurable models) / remag
+ *   3. BINNING            - metabat2 / semibin2 (configurable models) / remag ; DAS_Tool
  *   4. DEREPLICATION      - dRep (metabat + semibin only, NOT remag)
  *   5. CHECKM2_QC         - bacterial completeness/contamination (NOT remag)
  *   6. BUSCO_QC           - eukaryotic QC (ALL bin sets, including remag)
