@@ -158,3 +158,12 @@ workflow {
         }
     }
 }
+
+workflow.onComplete {
+    log.info """
+    Pipeline finished at : ${workflow.complete}
+    Total run time        : ${workflow.duration}
+    Success               : ${workflow.success}
+    Exit status           : ${workflow.exitStatus}
+    """.stripIndent()
+}
