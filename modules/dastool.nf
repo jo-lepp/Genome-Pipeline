@@ -48,7 +48,7 @@ process DAS_TOOL {
             src_dir="\$d"
         fi
 
-        Fasta_to_Contig2Bin.sh -i "$src_dir" -e fa > "contig2bin_tables/${label}.tsv"
+        Fasta_to_Contig2Bin.sh -i "\$src_dir" -e fa > "contig2bin_tables/\${label}.tsv"
         tables="\${tables}\${tables:+,}contig2bin_tables/\${label}.tsv"
         i=\$((i+1))
     done
