@@ -104,13 +104,6 @@ process CMSEARCH {
     """
     cmsearch --cpu ${params.threads_cmsearch} --tblout ${root}_ssu_hits.tblout "${cm_file}" "${mylo_assembly}"
 
-    # NOTE: the original fast_mode.def also runs `esl-sfetch --index` here,
-    # but the actual extraction below uses `samtools faidx` (which builds
-    # its own .fai index automatically) - esl-sfetch's index is never
-    # actually read. Kept here only for exact parity with the source
-    # script; removing it would not change the output.
-    esl-sfetch --index "${mylo_assembly}"
-
     grep -v "^#" ${root}_ssu_hits.tblout \\
         | awk '{print \$1":"\$8"-"\$9}' \\
         | xargs samtools faidx "${mylo_assembly}" > ${root}_extracted_ssu.fa
