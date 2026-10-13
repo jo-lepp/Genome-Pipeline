@@ -165,13 +165,17 @@ workflow {
             CMSEARCH_EUK(ch_assembly)
         }
     }
-    workflow.onComplete {
-        log.info """
-        Pipeline finished at : ${workflow.complete}
-        Total run time        : ${workflow.duration}
-        Success               : ${workflow.success}
-        Exit status           : ${workflow.exitStatus}
-        """.stripIndent()
+    workflow.onComplete = {
+        try {
+            log.info """
+            Pipeline finished at : ${workflow.complete}
+            Total run time        : ${workflow.duration}
+            Success               : ${workflow.success}
+            Exit status           : ${workflow.exitStatus}
+            """.stripIndent()
+        } catch (Exception e) {
+            log.warn "Could not print completion summary: ${e.message}"
     }
+}
 }
 
