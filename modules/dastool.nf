@@ -20,7 +20,7 @@ process DAS_TOOL {
 
     output:
     tuple val(root), path("dastool_DASTool_summary.tsv"),        emit: summary
-    tuple val(root), path("dastool_DASTool_contigs2bin.tsv"),    emit: contigs2bin
+    tuple val(root), path("dastool_DASTool_contig2bin.tsv"), emit: contigs2bin
     path "dastool_allBins.eval",                                 emit: bin_evals, optional: true
     path "DASTool_bins",                                         emit: bins_dir,  optional: true
 
