@@ -89,7 +89,7 @@ process CM_MODEL {
 process CMSEARCH {
     tag "$root"
     label 'cmsearch'
-    conda "bioconda::infernal bioconda::samtools"
+    conda "bioconda::infernal bioconda::samtools bioconda::seqkit"
     publishDir "${params.outdir}", mode: params.publish_mode
 
     input:
@@ -104,9 +104,21 @@ process CMSEARCH {
     """
     cmsearch --cpu ${params.threads_cmsearch} --tblout ${root}_ssu_hits.tblout "${cm_file}" "${mylo_assembly}"
 
-    grep -v "^#" ${root}_ssu_hits.tblout \\
-        | awk '{print \$1":"\$8"-"\$9}' \\
-        | xargs samtools faidx "${mylo_assembly}" > ${root}_extracted_ssu.fa
+    # cmsearch reports reverse-strand hits with seq-from > seq-to (column
+    # 10 is the strand itself). samtools faidx requires start <= end and
+    # silently returns an empty sequence otherwise - swap coordinates for
+    # '-' strand hits before fetching, then reverse-complement the result.
+    : > ${root}_extracted_ssu.fa
+    grep -v "^#" ${root}_ssu_hits.tblout | awk '{print \$1, \$8, \$9, \$10}' | \\
+    while read -r tgt tfrom tto strand; do
+        if [ "\$strand" = "-" ]; then
+            region="\${tgt}:\${tto}-\${tfrom}"
+            samtools faidx "${mylo_assembly}" "\$region" | seqkit seq -r -p -t dna >> ${root}_extracted_ssu.fa
+        else
+            region="\${tgt}:\${tfrom}-\${tto}"
+            samtools faidx "${mylo_assembly}" "\$region" >> ${root}_extracted_ssu.fa
+        fi
+    done
     """
 }
 
