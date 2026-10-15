@@ -34,7 +34,11 @@ process GTDBTK {
     script:
     """
     export GTDBTK_DATA_PATH="\$(pwd)/${db_dir}"
-    gtdbtk classify_wf --genome_dir "${derep_dir}" --out_dir gtdbtk -x .${ext}
+    mkdir -p pplacer_scratch
+    gtdbtk classify_wf --genome_dir "${derep_dir}" --out_dir gtdbtk -x .${ext} \\
+        --cpus ${params.threads_gtdbtk} \\
+        --pplacer_cpus 1 \\
+        --scratch_dir pplacer_scratch
     echo "bacterial taxonomy done (${label})."
     """
 }
