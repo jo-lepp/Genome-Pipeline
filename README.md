@@ -5,13 +5,13 @@
 1. MYLOASM                     - long-read assembly (skipped if --assembly given)
 2. MAPPING                     - minimap2 + samtools sort/index
 3. BINNING                     - metabat2 / semibin2 (configurable models) / remag
-   DASTOOL_INTEGRATION          - cross-method bin consensus (ALL bin sets)  [toggle]
-4. DEREPLICATION                - dRep (metabat + semibin only, NOT remag)
-5. CHECKM2_QC                   - bacterial completeness/contamination (NOT remag)
-6. BUSCO_QC                     - eukaryotic QC (ALL bin sets, including remag)
-7. GTDBTK_CLASSIFY               - bacterial taxonomy (NOT remag)          [toggle]
-8. GVCLASS_TAXONOMY               - eukaryotic taxonomy (ALL bin sets)     [toggle]
-   fast mode (SSU_EXTRACT_ALL or CMSEARCH_EUK) - alternative to 7 & 8      [toggle]
+   DASTOOL_INTEGRATION         - cross-method bin consensus (ALL bin sets)    [toggle]
+4. DEREPLICATION               - dRep (metabat + semibin only, NOT remag)
+5. CHECKM2_QC                  - bacterial completeness/contamination (NOT remag)
+6. BUSCO_QC                    - eukaryotic QC (ALL bin sets, including remag)
+7. GTDBTK_CLASSIFY             - bacterial taxonomy (NOT remag)               [toggle]
+8. GVCLASS_TAXONOMY            - eukaryotic taxonomy on ONE chosen bin source [toggle]
+   fast mode (SSU_EXTRACT_ALL or CMSEARCH_EUK) - alternative to 7 & 8         [toggle]
 ```
 
 Steps 7, 8, DAS_Tool, and the fast-mode step are independently toggleable
@@ -62,6 +62,7 @@ modules/
 | `run_dastool` | `true` | toggle DAS_Tool's cross-method bin consensus step. See [DAS_Tool](#das_tool-cross-method-bin-consensus) below |
 | `threads_dastool` | `16` | threads passed to DAS_Tool's `--threads` flag |
 | `run_gtdbtk` / `run_gvclass` | `true` | toggle full taxonomic classification steps |
+| `gvclass_input` | `'dastool'` | which single bin source GVClass runs on: `'dastool'`, `'metabat'`, `'soil'`, `'self'`, `'global'`, or `'remag'`. See [GVClass input selection](#gvclass-input-selection) below |
 | `run_cmsearch` | `false` | toggle the fast-mode alternative to GTDB-Tk/GVClass |
 | `fast_mode_tool` | `'ssu_extract'` | `'ssu_extract'` (default, full taxonomy via SSUextract) or `'cmsearch'` (legacy, eukaryote-only, exact `fast_mode.def` parity). See [Fast mode](#fast-mode-ssuextract-vs-legacy-cmsearch) below |
 | `ssuextract_db_profile` | `'curated'` | `'curated'` (~345 MiB, SILVA+PR2) or `'img'` (~841 MiB, + IMG sequences) |
@@ -166,9 +167,10 @@ GVClass taxonomy:
 
 ## GVClass bin subsampling
 
-Bins larger than `gvclass_max_bin_size_mb` (GVClass has a hard input-size
-limit and fails outright on oversized input) are **subsampled, not
-excluded**: `FNA_PREP` splits them into multiple smaller files using
+Whichever single bin source `gvclass_input` selects, any bin in it larger
+than `gvclass_max_bin_size_mb` (GVClass has a hard input-size limit and
+fails outright on oversized input) is **subsampled, not excluded**:
+`FNA_PREP` splits it into multiple smaller files using
 `gt splitfasta -targetsize` (from GenomeTools), and every resulting part
 is still sent through to GVClass. A pipeline-wide
 `<outdir>/gvclass_subsampled_bins_summary.tsv` records which bins were
@@ -198,7 +200,7 @@ the same "adapts automatically" pattern used throughout this pipeline.
 
 Output lands in `<outdir>/<root>_dastool/`:
 - `dastool_DASTool_summary.tsv` — quality/completeness of the selected bins
-- `dastool_DASTool_contigs2bin.tsv` — which contig ended up in which final bin
+- `dastool_DASTool_contig2bin.tsv` — which contig ended up in which final bin
 - `dastool_allBins.eval` — quality evaluation of every input bin, across all methods
 - `DASTool_bins/` — the selected bins themselves, as fasta files
 
@@ -214,6 +216,42 @@ database/dependency-not-found error, that flag may need to be added
 pointing at wherever conda installed it (e.g.
 `$CONDA_PREFIX/share/das_tool-*/db`) — a known rough edge in DAS_Tool's
 own documentation, not something specific to this pipeline.
+
+`DAS_TOOL`'s `bins_dir` output is tupled with the sample name
+(`tuple(root, path("DASTool_bins"))`), which is what lets its bins be
+selected as GVClass's input by default — see the next section.
+
+## GVClass input selection
+
+`GVCLASS_TAXONOMY` runs on exactly **one** user-selected bin source,
+controlled by `params.gvclass_input` (default `'dastool'`) — it no
+longer fans out across every bin set automatically. The default makes
+sense given the pipeline's own stages: running taxonomy on DAS_Tool's
+already cross-method-integrated consensus bins is usually more
+meaningful than running it separately on every individual binner's raw
+output.
+
+| `gvclass_input` value | Source |
+|---|---|
+| `'dastool'` (default) | `DASTOOL_INTEGRATION`'s consensus bins |
+| `'metabat'` | metabat2's dereplicated bins |
+| `'soil'` / `'self'` / `'global'` | that specific SemiBin2 model's dereplicated, unzipped bins |
+| `'remag'` | REMAG's raw bins (never dereplicated, by design) |
+
+```bash
+# default - GVClass runs on DAS_Tool's consensus bins
+--run_gvclass true --run_dastool true
+
+# run GVClass on just the soil SemiBin2 model's bins instead
+--run_gvclass true --gvclass_input soil
+```
+
+**This has one cross-param guard worth knowing about**: setting
+`--gvclass_input dastool` (the default) while `--run_dastool false` fails
+immediately with a clear error, rather than letting GVClass silently try
+to consume bins from a step that never ran. If you want `gvclass_input`
+set to anything other than `dastool`, `run_dastool` doesn't need to be on
+at all.
 
 ## Usage examples
 
