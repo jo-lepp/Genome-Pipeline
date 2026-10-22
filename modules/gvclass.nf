@@ -129,23 +129,32 @@ process GVCLASS {
  */
 workflow GVCLASS_TAXONOMY {
     take:
-    derep_dir
-    remag_bins_dir
-    unzipped_dir
+    derep_dir        // tuple(root, label, dereplicated_genomes dir) - metabat/self/soil/global
+    remag_bins_dir   // tuple(root, bins dir)
+    unzipped_dir     // tuple(root, label, unzipped dir)             - self/soil/global
+    dastool_bins_dir // tuple(root, bins dir)                        - from DASTOOL_INTEGRATION.out.bins_dir
 
     main:
     GVCLASS_SETUP()
 
-    ch_derep_metabat = derep_dir.filter { root, label, dir -> label == 'metabat' }
+    if (params.gvclass_input == 'dastool') {
+        ch_fna_in = dastool_bins_dir.map { root, dir -> tuple(root, 'dastool', dir, "${root}_dastool/fna") }
+    } else if (params.gvclass_input == 'remag') {
+        ch_fna_in = remag_bins_dir.map { root, dir -> tuple(root, 'remag', dir, "${root}_remag/fna") }
+    } else if (params.gvclass_input == 'metabat') {
+        ch_fna_in = derep_dir
+            .filter { root, label, dir -> label == 'metabat' }
+            .map    { root, label, dir -> tuple(root, label, dir, "${root}_metabat/fna") }
+    } else if (params.gvclass_input in ['soil', 'self', 'global']) {
+        ch_fna_in = unzipped_dir
+            .filter { root, label, dir -> label == params.gvclass_input }
+            .map    { root, label, dir -> tuple(root, label, dir, "${root}_semibin/${label}_model/fna") }
+    } else {
+        error("params.gvclass_input must be one of: dastool, metabat, soil, self, global, remag. Got: '${params.gvclass_input}'")
+    }
 
-    ch_fna_metabat = ch_derep_metabat.map { root, label, dir -> tuple(root, label, dir, "${root}_metabat/fna") }
-    ch_fna_remag   = remag_bins_dir.map   { root, dir       -> tuple(root, 'remag', dir, "${root}_remag/fna") }
-    ch_fna_semibin = unzipped_dir.map     { root, label, dir -> tuple(root, label, dir, "${root}_semibin/${label}_model/fna") }
-
-    ch_fna_in = ch_fna_metabat.mix(ch_fna_remag).mix(ch_fna_semibin)
     FNA_PREP(ch_fna_in)
     GVCLASS(FNA_PREP.out.fna_dir, GVCLASS_SETUP.out.install_dir.first())
-
     COLLECT_SUBSAMPLE_REPORT(FNA_PREP.out.subsampled.collect())
 
     emit:
