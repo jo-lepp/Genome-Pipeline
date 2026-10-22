@@ -45,6 +45,9 @@ workflow {
     if (!(params.read_type in ['hifi', 'ont'])) {
         exit 1, "params.read_type must be 'hifi' or 'ont', got: '${params.read_type}'"
     }
+    if (params.gvclass_input == 'dastool' && !run_dastool) {
+        error("params.gvclass_input is 'dastool' but run_dastool is false - DAS_Tool must run to produce the bins GVClass would use. Either enable run_dastool or pick a different gvclass_input.")
+    }
 
     // ================= 0. BUILD PER-SAMPLE CHANNELS =================
     if (!(params.read_type in ['hifi', 'ont'])) {
@@ -126,8 +129,10 @@ workflow {
     BINNING(ch_assembly_bam, run_metabat2, run_semibin2, run_remag)
 
     // ================= DAS_TOOL (cross-method bin consensus, independent of dRep) =================
+    ch_dastool_bins_dir = Channel.empty()
     if (run_dastool) {
         DASTOOL_INTEGRATION(BINNING.out.all_bin_sets, ch_assembly)
+        ch_dastool_bins_dir = DASTOOL_INTEGRATION.out.bins_dir
     }
 
     // ================= 4. DEREPLICATION (metabat + semibin, NOT remag) =================
@@ -150,7 +155,8 @@ workflow {
         GVCLASS_TAXONOMY(
             DEREPLICATION.out.derep_dir,
             BINNING.out.remag_bins_dir,
-            BUSCO_QC.out.unzipped_dir
+            BUSCO_QC.out.unzipped_dir,
+            ch_dastool_bins_dir
         )
     }
 
