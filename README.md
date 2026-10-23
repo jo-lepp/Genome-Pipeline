@@ -30,12 +30,6 @@ binner runs per invocation — see [Binner selection](#binner-selection)
 below. The pipeline prints its total run time when it finishes — see
 [Runtime announcement](#runtime-announcement) below.
 
-**DAS_Tool has been removed.** Earlier versions of this pipeline ran
-multiple binners in parallel and used DAS_Tool to pick a consensus set
-across them. Now that only one binner runs per invocation, there's
-nothing left to integrate across — bins go straight from `BINNING` into
-`DEREPLICATION`.
-
 ## Requirements
 
 - Nextflow (26.04.6 or later recommended)
