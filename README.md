@@ -1,97 +1,96 @@
+# Genome-Pipeline
+
+A Nextflow DSL2 long-read metagenomics pipeline: assembly, single-binner
+binning, dereplication, and QC/taxonomy, finishing in one compiled
+per-bin spreadsheet.
+
 ## Pipeline stages
 
 ```
 0. Build per-sample channels   - single sample, pre-assembled, or samplesheet
 1. MYLOASM                     - long-read assembly (skipped if --assembly given)
 2. MAPPING                     - minimap2 + samtools sort/index
-3. BINNING                     - metabat2 / semibin2 (configurable models) / remag
-   DASTOOL_INTEGRATION         - cross-method bin consensus (ALL bin sets)    [toggle]
-4. DEREPLICATION               - dRep (metabat + semibin only, NOT remag)
-5. CHECKM2_QC                  - bacterial completeness/contamination (NOT remag)
-6. BUSCO_QC                    - eukaryotic QC (ALL bin sets, including remag)
-7. GTDBTK_CLASSIFY             - bacterial taxonomy (NOT remag)               [toggle]
-8. GVCLASS_TAXONOMY            - eukaryotic taxonomy on ONE chosen bin source [toggle]
-   fast mode (SSU_EXTRACT_ALL or CMSEARCH_EUK) - alternative to 7 & 8         [toggle]
+3. BINNING                     - exactly ONE binner runs: metabat2, semibin2, or remag
+   (remag only)                  REMAG's rejected (bacterial-looking) contigs get
+                                  re-binned by a second, user-chosen binner; both
+                                  sets of bins are merged before dereplication
+4. DEREPLICATION                - dRep, on whatever BINNING produced
+                                  [--drep_ignore_genome_quality skips CheckM entirely]
+5. CHECKM2_QC                   - completeness/contamination/assembly stats
+6. BUSCO_QC                     - eukaryotic completeness QC
+7. GTDBTK_CLASSIFY               - bacterial/archaeal taxonomy             [toggle]
+8. GVCLASS_TAXONOMY               - eukaryotic/viral taxonomy             [toggle]
+   fast mode (SSU_EXTRACT_ALL or CMSEARCH_EUK) - alternative to 7 & 8     [toggle]
+9. REPORT                      - compiles CheckM2 + GTDB-Tk + GVClass + SSUextract
+                                  into one per-bin spreadsheet (<root>_bin_report.xlsx)
 ```
 
-Steps 7, 8, DAS_Tool, and the fast-mode step are independently toggleable
-— run any combination of them. The pipeline prints its total run time
-when it finishes — see [Runtime announcement](#runtime-announcement) below.
+Steps 7, 8, and the fast-mode step are independently toggleable. Only one
+binner runs per invocation — see [Binner selection](#binner-selection)
+below. The pipeline prints its total run time when it finishes — see
+[Runtime announcement](#runtime-announcement) below.
+
+**DAS_Tool has been removed.** Earlier versions of this pipeline ran
+multiple binners in parallel and used DAS_Tool to pick a consensus set
+across them. Now that only one binner runs per invocation, there's
+nothing left to integrate across — bins go straight from `BINNING` into
+`DEREPLICATION`.
 
 ## Requirements
 
-- Nextflow ≥ 23.10
-- conda or mamba on every machine that will execute tasks — no
-  Apptainer/Singularity/Docker required. Nextflow builds and caches a
-  dedicated conda environment per process automatically, based on each
-  process's own `conda` directive.
-- `git` available on the host for the two pixi-managed tools (GVClass,
-  SSUextract), which are cloned and built once, then cached via `storeDir`.
+- Nextflow (26.04.6 or later recommended)
+- conda/mamba on `PATH` — every process builds its own environment automatically
+- enough disk under `db_dir` for reference databases (CheckM1, CheckM2, GTDB-Tk, GVClass, SSUextract — tens of GB combined)
 
 ## Repo layout
 
 ```
-main.nf                 workflow wiring, in the same order as the original .def file
-nextflow.config          params, conda settings, resource labels
+main.nf                    entry workflow
+nextflow.config             params, resource labels, conda settings
 modules/
-  myloasm.nf              assembly (params.read_type: hifi/ont preset)
-  mapping.nf               minimap2 + samtools sort/index (params.read_type preset)
-  binning.nf               DEPTH, METABAT2, SEMIBIN2, REMAG + BINNING subworkflow
-  dastool.nf               DAS_TOOL + DASTOOL_INTEGRATION subworkflow (cross-method bin consensus)
-  drep.nf                  CHECKM1_DB, DREP + DEREPLICATION subworkflow
-  checkm2.nf               CHECKM2_DB, CHECKM2 + CHECKM2_QC subworkflow
-  busco.nf                 UNZIP_BINS, BUSCO + BUSCO_QC subworkflow
-  gtdbtk.nf                GTDBTK_DB, GTDBTK + GTDBTK_CLASSIFY subworkflow
-  gvclass.nf               GVCLASS_SETUP, FNA_PREP (bin subsampling), COLLECT_SUBSAMPLE_REPORT, GVCLASS + GVCLASS_TAXONOMY subworkflow
-  cmsearch.nf              fast-mode taxonomy: SSUEXTRACT_SETUP/SSU_EXTRACT (default) + CM_MODEL/CMSEARCH (legacy) subworkflows
+  myloasm.nf                MYLOASM
+  mapping.nf                MAPPING
+  binning.nf                DEPTH, METABAT2, SEMIBIN2, REMAG + BINNING subworkflow
+                             (single-binner selection + REMAG reject rebinning)
+  drep.nf                   CHECKM1_DB, DREP + DEREPLICATION subworkflow
+                             (ignoreGenomeQuality support, bin-format normalization)
+  checkm2.nf                CHECKM2_DB, CHECKM2 + CHECKM2_QC subworkflow
+  busco.nf                  BUSCO + BUSCO_QC subworkflow
+  gtdbtk.nf                 GTDBTK_DB, GTDBTK + GTDBTK_CLASSIFY subworkflow
+  gvclass.nf                GVCLASS_SETUP, FNA_PREP, GVCLASS, COLLECT_SUBSAMPLE_REPORT + GVCLASS_TAXONOMY subworkflow
+  cmsearch.nf                SSUextract (default) or legacy cmsearch, fast-mode alternative to 7 & 8
+  report.nf                  REPORT: compiles the final per-bin spreadsheet
 ```
 
 ## Key parameters
 
-| Param | Default | Purpose |
+| Param | Default | Notes |
 |---|---|---|
 | `input_fgz` | `/home/user/data/input.fastq.gz` | reads for single-sample mode |
-| `nametag` | `""` | override the derived sample name (single-sample mode only) |
-| `assembly` | `""` | path to an existing assembly — skips `MYLOASM` (single-sample mode only) |
-| `samplesheet` | `""` | CSV path for multi-sample mode (columns: `fastq`, `assembly`) — see below. Takes priority over `input_fgz`/`assembly`/`nametag` when set |
-| `read_type` | `'hifi'` | `'hifi'` or `'ont'` — selects the matching `MYLOASM`/`MAPPING` presets. See [Read type](#read-type-pacbio-hifi-vs-ont) below |
+| `nametag` | `""` | sample name override (single-sample mode) |
+| `assembly` | `""` | pre-existing assembly — skips MYLOASM if given |
+| `samplesheet` | `""` | enables multi-sample mode — see below |
+| `read_type` | `'hifi'` | `'hifi'` or `'ont'` — picks minimap2's preset |
 | `outdir` | `/home/user/data/output` | where results are published |
-| `db_dir` | `'refdbs'` | **persistent, shared** location for one-time reference database/tool downloads (CheckM1, CheckM2, GTDB-Tk, GVClass, SSUextract) — deliberately separate from `outdir` so every run/sample reuses the same data instead of re-downloading. Relative to wherever you launch `nextflow` from — see the callout below |
-| `run_metabat2` / `run_semibin2` / `run_remag` | `true` | toggle each binner independently |
-| `semibin_models` | `'soil,self,global'` | comma-separated subset of SemiBin2 models to run |
-| `run_dastool` | `true` | toggle DAS_Tool's cross-method bin consensus step. See [DAS_Tool](#das_tool-cross-method-bin-consensus) below |
-| `threads_dastool` | `16` | threads passed to DAS_Tool's `--threads` flag |
+| `db_dir` | `'refdbs'` | shared reference-database cache, relative to launch dir |
+| `binner` | `'metabat'` | `'metabat'`, `'semibin'`, or `'remag'` — see [Binner selection](#binner-selection) |
+| `remag_reject_binner` | `'metabat'` | `'metabat'` or `'semibin'` — only used when `binner` is `'remag'` |
+| `semibin_models` | `'soil'` | comma-separated SemiBin2 model(s); used when `binner` (or `remag_reject_binner`) is `'semibin'` |
+| `drep_ignore_genome_quality` | `false` | skip CheckM entirely in dRep — see [dRep genome quality filtering](#drep-genome-quality-filtering) |
 | `run_gtdbtk` / `run_gvclass` | `true` | toggle full taxonomic classification steps |
-| `gvclass_input` | `'dastool'` | which single bin source GVClass runs on: `'dastool'`, `'metabat'`, `'soil'`, `'self'`, `'global'`, or `'remag'`. See [GVClass input selection](#gvclass-input-selection) below |
-| `run_cmsearch` | `false` | toggle the fast-mode alternative to GTDB-Tk/GVClass |
-| `fast_mode_tool` | `'ssu_extract'` | `'ssu_extract'` (default, full taxonomy via SSUextract) or `'cmsearch'` (legacy, eukaryote-only, exact `fast_mode.def` parity). See [Fast mode](#fast-mode-ssuextract-vs-legacy-cmsearch) below |
-| `ssuextract_db_profile` | `'curated'` | `'curated'` (~345 MiB, SILVA+PR2) or `'img'` (~841 MiB, + IMG sequences) |
-| `ssuextract_tree_classification` | `false` | enable SSUextract's optional tree-based taxonomy refinement |
-| `gvclass_max_bin_size_mb` | `50` | bins larger than this are **subsampled** (split into smaller parts), not excluded — see [Bin subsampling](#gvclass-bin-subsampling) below |
-
-Sample names are always derived via `.simpleName` on the fastq filename
-(strips all extensions) unless overridden by `--nametag` in
-single-sample mode. Samplesheet mode has no per-row name override —
-it's always `.simpleName` on that row's `fastq` path.
+| `run_cmsearch` | `false` | enable fast mode (alternative to GTDB-Tk/GVClass) |
+| `fast_mode_tool` | `'ssu_extract'` | `'ssu_extract'` (default) or `'cmsearch'` (legacy) |
+| `gvclass_max_bin_size_mb` | `50` | bins larger than this are **subsampled**, not excluded — see [Bin subsampling](#gvclass-bin-subsampling) |
+| `busco_lineage` | `'eukaryota_odb10'` | BUSCO lineage dataset |
 
 ## Reference database location (`db_dir`)
 
-`db_dir` defaults to `'refdbs'` — a relative path matching the `refdbs/`
-folder already committed in this repo (kept empty via `.gitignore`; the
-actual downloaded databases never get committed, only the folder
-itself). This is a deliberate convenience default, with one thing worth
-knowing: **a relative path resolves relative to wherever you run
-`nextflow run` from, not relative to the repo.** As long as you always
-launch the pipeline from the repo root (e.g. `cd` into it first, as
-every example below assumes), `refdbs` reliably means the same folder
-every time, and every run/sample shares the same cached databases.
-
-If you ever launch this pipeline from a different working directory
-(a script, a cron job, a different clone), pass an absolute path instead
-to guarantee the same location regardless of where you start from:
-```bash
---db_dir /home/you/genome_pipeline/Genome-Pipeline/refdbs
-```
+All one-time downloads (CheckM1, CheckM2, GTDB-Tk, GVClass, SSUextract)
+are cached under `db_dir`, relative to wherever you launch `nextflow run`
+from — see [Usage examples](#usage-examples) for the relative-path
+convention this repo follows. CheckM1's database is only downloaded when
+`drep_ignore_genome_quality` is `false` (the default) — if you set it to
+`true`, that download is skipped entirely since dRep never calls CheckM.
 
 ## Samplesheet format (multi-sample mode)
 
@@ -101,76 +100,118 @@ data/sample01.fastq.gz,
 data/sample02.fastq.gz,data/sample02_hifiasm_assembly.fa
 data/sample03.fastq.gz,
 ```
-
-Leave `assembly` blank for any row that needs `MYLOASM` run; fill it in
-for rows that already have one. All other pipeline settings (binner
-toggles, thread counts, `db_dir`, `read_type`, fast-mode settings, etc.)
-apply globally across every sample in the sheet.
+Sample name = `fastq_file.simpleName`. No per-row name override in
+samplesheet mode.
 
 ## Read type: PacBio HiFi vs. ONT
 
-`params.read_type` (`'hifi'` or `'ont'`, default `'hifi'`) controls the only
-two places in the pipeline that are technology-specific:
+`--read_type hifi` (default) uses minimap2's `map-hifi` preset;
+`--read_type ont` uses `map-ont`. This also affects MYLOASM's assembly
+mode internally.
 
-| Step | HiFi | ONT |
-|---|---|---|
-| `MYLOASM` preset | `--hifi` | `--nano-r10` |
-| `MAPPING` (minimap2 `-x`) | `map-hifi` | `map-ont` |
+## Binner selection
 
-Everything downstream of `MAPPING` works purely off the assembly and/or
-the resulting BAM coverage, with no awareness of which sequencing
-technology produced them. An invalid value fails the run immediately
-with a clear error rather than silently defaulting.
+Only **one** binner runs per invocation, controlled by `--binner`:
+
+| `binner` value | What runs |
+|---|---|
+| `'metabat'` (default) | metabat2 only |
+| `'semibin'` | SemiBin2, using whichever model(s) `semibin_models` lists |
+| `'remag'` | REMAG (eukaryote-focused) — see [REMAG reject rebinning](#remag-reject-rebinning) below |
 
 ```bash
-nextflow run main.nf --input_fgz sample.fastq.gz --outdir out/ --read_type ont -resume
+# default
+--binner metabat
+
+# run SemiBin2 instead, with two models
+--binner semibin --semibin_models soil,global
+
+# run REMAG, re-binning its bacterial rejects with SemiBin2
+--binner remag --remag_reject_binner semibin
 ```
 
-**Note:** this is a single, pipeline-wide setting, including in
-samplesheet mode. A mixed-technology batch (some HiFi, some ONT, in one
-run) isn't currently supported — would need a `read_type` column added
-to the samplesheet, similar to how `assembly` is already optional per row.
+This is a deliberate simplification from earlier versions of this
+pipeline, which ran all three binners in parallel and used DAS_Tool to
+pick a consensus set. With one binner chosen up front, every downstream
+step (`DEREPLICATION`, `CHECKM2_QC`, `BUSCO_QC`, `GTDBTK_CLASSIFY`,
+`GVCLASS_TAXONOMY`) runs exactly once per sample, on exactly one bin set
+— no more per-label branching.
+
+## REMAG reject rebinning
+
+REMAG's niche is eukaryotic bins — by design, it filters out
+bacterial-looking contigs rather than binning them. When `binner` is
+`'remag'`, those rejected contigs (written to `*_non_eukaryotic.fasta`
+via REMAG's own `--save-filtered-contigs` flag) are **not discarded**:
+they're re-binned by a second binner of your choice
+(`remag_reject_binner`, `'metabat'` or `'semibin'`), reusing the same
+BAM already computed for the sample — no re-alignment needed, since
+`jgi_summarize_bam_contig_depths` only reports depth for whichever
+contigs are present in the given fasta.
+
+Both sets of bins — REMAG's own eukaryotic bins, and the secondary
+binner's bacterial bins — are merged into one list before
+`DEREPLICATION`. Because they represent different organisms, they won't
+share meaningful ANI overlap, so dRep simply keeps both untouched rather
+than trying to dereplicate them against each other.
+
+```bash
+--binner remag --remag_reject_binner metabat
+```
+
+## dRep genome quality filtering
+
+By default, dRep runs CheckM internally and filters out genomes below
+its completeness/contamination thresholds before clustering. CheckM's
+models are trained on bacteria and archaea — they will often
+**incorrectly score real eukaryotic genomes as low-quality and filter
+them out**, which defeats the purpose of running REMAG (or any
+eukaryote-focused workflow) in the first place.
+
+Setting `--drep_ignore_genome_quality true` passes dRep's own
+`--ignoreGenomeQuality` flag, which skips CheckM entirely — no
+quality-based filtering happens, and genomes are clustered purely on
+ANI. This also means the CheckM1 database is never downloaded for that
+run (see [Reference database location](#reference-database-location-db_dir)
+above).
+
+```bash
+# recommended whenever binner is 'remag', or whenever eukaryotic
+# genomes are expected in the sample
+--drep_ignore_genome_quality true
+```
+
+This is **off by default** — only enable it when you specifically expect
+genomes CheckM would misjudge; for an all-bacterial sample, the default
+quality filtering is still the safer choice.
 
 ## Fast mode: SSUextract vs. legacy cmsearch
 
-When `run_cmsearch` is enabled, `fast_mode_tool` selects which
-implementation runs as the (much faster) alternative to full GTDB-Tk +
-GVClass taxonomy:
+`--run_cmsearch true` enables a fast alternative to full taxonomic
+classification (`GTDBTK_CLASSIFY`/`GVCLASS_TAXONOMY`), extracting and
+classifying 16S/18S rRNA genes directly from the assembly instead.
+`fast_mode_tool` picks which implementation:
 
-- **`ssu_extract`** (default) — runs
-  [SSUextract](https://github.com/NeLLi-team/ssuextract), a full
-  Nextflow pipeline in its own right (same pixi-managed install pattern
-  as GVClass). It detects 16S rRNA genes (routing through an RF00177-based
-  index) and 18S rRNA genes (RF01960-based index) via bundled Infernal
-  covariance models, then assigns taxonomy via BLAST against SILVA + PR2
-  (`curated` profile) or SILVA + PR2 + IMG (`img` profile), with an
-  optional tree-based classification refinement
-  (`ssuextract_tree_classification`). Archaea are covered through SILVA's
-  16S taxonomy rather than a separate archaeal model. Output lands in
-  `<outdir>/<root>_ssuextract/results/`, including `cmsearch_summary.tsv`
-  (the main per-hit taxonomy table) and `extracted/*.fna` (extracted SSU
-  sequences).
-- **`cmsearch`** (legacy) — the original `fast_mode.def` behavior exactly:
-  a single cmsearch pass against the eukaryotic SSU rRNA model (Rfam
-  RF01960) only, with hits extracted via `esl-sfetch`/`samtools faidx`
-  into `<outdir>/<root>_extracted_ssu.fa`. No taxonomy assignment, no
-  bacteria/archaea coverage — kept around for exact parity with the
-  original script.
+- `'ssu_extract'` (default): the actively maintained
+  [SSUextract](https://github.com/NeLLi-team/ssuextract) pipeline,
+  covering bacteria, archaea, *and* eukaryotes (16S + 18S).
+- `'cmsearch'` (legacy): a single Rfam covariance model (RF01960),
+  eukaryotes only.
+
+Fast mode operates directly on the assembly — it never depends on
+`BINNING` or `DEREPLICATION`, so it runs independently of whichever
+binner you chose.
 
 ```bash
-# fast mode, new default (SSUextract, full taxonomy, all 3 domains)
---run_cmsearch true
-
-# fast mode, legacy single-domain cmsearch (exact fast_mode.def parity)
---run_cmsearch true --fast_mode_tool cmsearch
+--run_cmsearch true                          # default tool: ssu_extract
+--run_cmsearch true --fast_mode_tool cmsearch  # legacy single-model path
 ```
 
 ## GVClass bin subsampling
 
-Whichever single bin source `gvclass_input` selects, any bin in it larger
-than `gvclass_max_bin_size_mb` (GVClass has a hard input-size limit and
-fails outright on oversized input) is **subsampled, not excluded**:
-`FNA_PREP` splits it into multiple smaller files using
+Bins larger than `gvclass_max_bin_size_mb` (GVClass has a hard input-size
+limit and fails outright on oversized input) are **subsampled, not
+excluded**: `FNA_PREP` splits them into multiple smaller files using
 `gt splitfasta -targetsize` (from GenomeTools), and every resulting part
 is still sent through to GVClass. A pipeline-wide
 `<outdir>/gvclass_subsampled_bins_summary.tsv` records which bins were
@@ -182,90 +223,51 @@ half, which `gt splitfasta` never does. That part is still passed through
 to GVClass (rather than silently dropped), but flagged with a `[WARNING:
 ...]` note in the summary.
 
-## DAS_Tool: cross-method bin consensus
+## Output spreadsheet
 
-[DAS_Tool](https://github.com/cmks/DAS_Tool) (Sieber et al. 2018) integrates
-the bins from every binning method that actually ran for a sample — metabat2,
-whichever SemiBin2 models were selected, and REMAG — and picks an optimized,
-non-redundant set using its own single-copy-gene scoring. This is distinct
-from `DEREPLICATION`/dRep: dRep only dereplicates *within* one method's own
-output, while DAS_Tool picks the best representative bin *across* different
-methods for the same organism. The two run independently and in parallel —
-DAS_Tool consumes `BINNING`'s raw bin sets directly, not dRep's filtered output.
+The final step, `REPORT`, compiles everything into one per-bin workbook:
+`<outdir>/<root>_bin_report.xlsx`. It joins:
 
-DAS_Tool automatically adapts to however many bin sets a given run actually
-produced — if `run_remag` is off or `semibin_models` is trimmed down to one
-model, DAS_Tool simply integrates whatever's left (as few as two methods),
-the same "adapts automatically" pattern used throughout this pipeline.
+- **CheckM2's `quality_report.tsv`** — the backbone of the report:
+  `Completeness`, `Contamination`, `Coding_Density`, `Contig_N50`,
+  `Average_Gene_Length`, `Genome_Size`, `GC_Content`,
+  `Total_Coding_Sequences`, `Total_Contigs`, `Max_Contig_Length`
+- **GTDB-Tk's `summary.tsv`** (if `run_gtdbtk`) — `GTDB_classification`,
+  plus `closest_genome_reference`/`_ani`/`_af` (GTDB-Tk's `fastani_*`
+  columns, falling back to `closest_placement_*` when ANI-based
+  classification wasn't available) and `red_value`
+- **GVClass's `gvclass_summary.tsv`** (if `run_gvclass`) —
+  `GVclass_classification`
+- **SSUextract's summary** (if `run_cmsearch`) — `ssuextract_tax` and
+  `SSU_seq`, attached to whichever bin actually contains the contig the
+  rRNA hit came from (left blank for every other bin)
 
-Output lands in `<outdir>/<root>_dastool/`:
-- `dastool_DASTool_summary.tsv` — quality/completeness of the selected bins
-- `dastool_DASTool_contig2bin.tsv` — which contig ended up in which final bin
-- `dastool_allBins.eval` — quality evaluation of every input bin, across all methods
-- `DASTool_bins/` — the selected bins themselves, as fasta files
+Any toggle that's off, or a tool output that's missing or has drifted in
+format, fills that section's columns with `N/A` rather than failing the
+whole report.
 
-```bash
-# disable DAS_Tool for a faster run
---run_dastool false
-```
-
-**One thing to watch on a first run**: DAS_Tool's bioconda package is
-expected to auto-locate its bundled single-copy-gene database, so
-`--dbDirectory` isn't set explicitly. If it fails with a
-database/dependency-not-found error, that flag may need to be added
-pointing at wherever conda installed it (e.g.
-`$CONDA_PREFIX/share/das_tool-*/db`) — a known rough edge in DAS_Tool's
-own documentation, not something specific to this pipeline.
-
-`DAS_TOOL`'s `bins_dir` output is tupled with the sample name
-(`tuple(root, path("DASTool_bins"))`), which is what lets its bins be
-selected as GVClass's input by default — see the next section.
-
-## GVClass input selection
-
-`GVCLASS_TAXONOMY` runs on exactly **one** user-selected bin source,
-controlled by `params.gvclass_input` (default `'dastool'`) — it no
-longer fans out across every bin set automatically. The default makes
-sense given the pipeline's own stages: running taxonomy on DAS_Tool's
-already cross-method-integrated consensus bins is usually more
-meaningful than running it separately on every individual binner's raw
-output.
-
-| `gvclass_input` value | Source |
-|---|---|
-| `'dastool'` (default) | `DASTOOL_INTEGRATION`'s consensus bins |
-| `'metabat'` | metabat2's dereplicated bins |
-| `'soil'` / `'self'` / `'global'` | that specific SemiBin2 model's dereplicated, unzipped bins |
-| `'remag'` | REMAG's raw bins (never dereplicated, by design) |
-
-```bash
-# default - GVClass runs on DAS_Tool's consensus bins
---run_gvclass true --run_dastool true
-
-# run GVClass on just the soil SemiBin2 model's bins instead
---run_gvclass true --gvclass_input soil
-```
-
-**This has one cross-param guard worth knowing about**: setting
-`--gvclass_input dastool` (the default) while `--run_dastool false` fails
-immediately with a clear error, rather than letting GVClass silently try
-to consume bins from a step that never ran. If you want `gvclass_input`
-set to anything other than `dastool`, `run_dastool` doesn't need to be on
-at all.
+**Two things worth knowing about this report that aren't fully
+battle-tested yet:**
+- GVClass's exact taxonomy column name isn't hardcoded — the script
+  searches for any column containing "taxonomy" or "classification" in
+  GVClass's own header. Worth double-checking it picked the right one
+  against a real run.
+- The SSUextract-to-bin matching (scanning every bin fasta's headers for
+  the rRNA hit's contig ID) is this pipeline's own heuristic, not
+  something SSUextract or any other tool does natively — it reproduces
+  the pattern of "one bin gets the hit, others are blank," but hasn't
+  been validated against a real multi-bin run yet.
 
 ## Usage examples
 
 **All paths below are relative**, matching this repo's own convention
 (`data/` for inputs, `results/` for outputs, `refdbs/` for the shared
-database cache). As covered in [Reference database
-location](#reference-database-location-db_dir), a relative path resolves
-relative to wherever you run `nextflow run` from — so these examples
-assume you're launching from the repo root (`cd` into it first) every
-time. Use an absolute path instead for anything that needs to resolve
-the same way regardless of your current directory (a script, a cron
-job, launching from different locations).
+database cache). A relative path resolves relative to wherever you run
+`nextflow run` from — these examples assume you're launching from the
+repo root every time. Use an absolute path instead for anything that
+needs to resolve the same way regardless of your current directory.
 
-**1. Basic single-sample run — full pipeline, default settings**
+**1. Basic single-sample run — metabat2 (default), full taxonomy**
 ```bash
 nextflow run main.nf \
   --input_fgz data/sample01.fastq.gz \
@@ -274,107 +276,91 @@ nextflow run main.nf \
   -resume
 ```
 
-**2. Single sample with an explicit name**
+**2. REMAG, with bacterial rejects re-binned by SemiBin2, ignoring genome quality in dRep**
 ```bash
 nextflow run main.nf \
   --input_fgz data/raw_reads_batch3_042.fastq.gz \
-  --nametag   patient_A \
   --outdir    results/patient_A \
   --db_dir    refdbs \
+  --binner               remag \
+  --remag_reject_binner  semibin \
+  --drep_ignore_genome_quality true \
   -resume
 ```
 
-**3. Pre-assembled input — skip MYLOASM**
+**3. Pre-supplied assembly, SemiBin2 with two models**
 ```bash
 nextflow run main.nf \
   --input_fgz data/sample02.fastq.gz \
   --assembly  data/sample02_hifiasm_assembly.fa \
   --outdir    results/sample02 \
   --db_dir    refdbs \
+  --binner          semibin \
+  --semibin_models  soil,global \
   -resume
 ```
-Still needs the reads (for mapping/depth calc), but `MYLOASM` never runs.
 
-**4. Oxford Nanopore reads instead of PacBio HiFi**
+**4. ONT reads**
 ```bash
 nextflow run main.nf \
   --input_fgz data/ont_sample.fastq.gz \
-  --read_type ont \
   --outdir    results/ont_sample \
   --db_dir    refdbs \
+  --read_type ont \
   -resume
 ```
 
-**5. Fast mode — skip GTDB-Tk/GVClass, run SSUextract instead**
+**5. Fast mode only, skip full taxonomy**
 ```bash
 nextflow run main.nf \
   --input_fgz data/sample01.fastq.gz \
   --outdir    results/sample01_fast \
   --db_dir    refdbs \
-  --run_gtdbtk   false \
-  --run_gvclass  false \
-  --run_cmsearch true \
-  -resume
-```
-
-**6. Fast mode, legacy single-domain cmsearch**
-```bash
-nextflow run main.nf \
-  --input_fgz data/sample01.fastq.gz \
-  --outdir    results/sample01_fast_legacy \
-  --db_dir    refdbs \
   --run_gtdbtk     false \
   --run_gvclass    false \
   --run_cmsearch   true \
+  -resume
+```
+
+**6. Legacy cmsearch fast mode**
+```bash
+nextflow run main.nf \
+  --input_fgz data/sample01.fastq.gz \
+  --outdir     results/sample01_fast_legacy \
+  --db_dir     refdbs \
+  --run_gtdbtk    false \
+  --run_gvclass   false \
+  --run_cmsearch  true \
   --fast_mode_tool cmsearch \
   -resume
 ```
 
-**7. Only a subset of binners, and only some SemiBin2 models**
-```bash
-nextflow run main.nf \
-  --input_fgz data/sample01.fastq.gz \
-  --outdir    results/sample01 \
-  --db_dir    refdbs \
-  --run_remag       false \
-  --semibin_models  soil,global \
-  -resume
-```
-
-**8. Multi-sample batch run via samplesheet**
-```bash
-nextflow run main.nf \
-  --samplesheet data/batch1_samples.csv \
-  --outdir      results/batch1 \
-  --db_dir      refdbs \
-  -resume
-```
-
-**9. Combining samplesheet mode with fast mode and a binner subset**
+**7. Multi-sample run via samplesheet**
 ```bash
 nextflow run main.nf \
   --samplesheet     data/batch1_samples.csv \
-  --outdir          results/batch1_fast \
+  --outdir          results/batch1 \
   --db_dir          refdbs \
-  --run_gtdbtk      false \
-  --run_gvclass     false \
-  --run_cmsearch    true \
-  --semibin_models  global \
+  --binner          metabat \
   -resume
 ```
 
-**10. Re-running after a partial failure**
+**8. Multi-sample, fast mode only**
 ```bash
-# some tasks failed partway through - just re-run the exact same command;
-# -resume skips everything that already completed successfully and only
-# retries what failed or never ran
-nextflow run main.nf --samplesheet data/batch1_samples.csv --outdir results/batch1 --db_dir refdbs -resume
+nextflow run main.nf \
+  --samplesheet      data/batch1_samples.csv \
+  --outdir           results/batch1_fast \
+  --db_dir           refdbs \
+  --run_gtdbtk       false \
+  --run_gvclass      false \
+  --run_cmsearch     true \
+  -resume
 ```
 
 ## Runtime announcement
 
 Every run prints a short summary when it finishes, success or failure,
-via Nextflow's `workflow.onComplete` hook:
+via Nextflow's `workflow.onComplete` handler:
 
 ```
 Pipeline finished at : 2026-10-09T17:42:11.123-04:00
@@ -389,54 +375,18 @@ for the whole invocation, not CPU time summed across tasks. On a
 actually spent running (cached tasks don't add to it), not the combined
 time across every attempt that led up to a finished result.
 
+Under Nextflow's strict parser, this handler must be declared as an
+**assignment** inside the entry workflow — `workflow.onComplete = { ... }`
+— not the older `workflow.onComplete { ... }` method-call form, which
+compiles but misbehaves at runtime.
+
 ## Notes
 
-- **`-resume` is a single dash**, not `--resume` — it's a Nextflow
-  engine flag, not a pipeline param, so it doesn't go through `params.*`.
-- **`db_dir` must point somewhere you have write access to** — a bare
-  top-level path like `/refdbs` requires root to create and will fail.
-  See [Reference database location](#reference-database-location-db_dir)
-  above for the relative-vs-absolute tradeoff.
-- **`db_dir` should point at the same location across every run** you
-  want to share cached databases between — that's what makes the
-  one-time downloads (CheckM1, CheckM2, GTDB-Tk, GVClass, SSUextract)
-  actually pay off across samples/projects instead of re-downloading.
-  These use Nextflow's `storeDir` directive, which checks whether the
-  file already exists on disk (not just whether the task hash matches),
-  so it skips re-downloading even on a brand-new run with no prior
-  `work/` directory. The `refdbs/` folder in this repo is `.gitignore`'d
-  so the (potentially many-GB) downloaded contents never get committed —
-  only the empty folder itself is tracked.
-- **dRep's internal dependency on checkM1** (a separate, older tool from
-  CheckM2) needs its own reference database, downloaded once via
-  `CHECKM1_DB` and registered per-task via `checkm data setRoot`. Without
-  this, dRep fails at its filtering step with `!!! checkM failed !!!`
-  and silently produces zero dereplicated genomes despite exiting status 0.
-- Every binner toggle, taxonomy toggle, `semibin_models`, `read_type`,
-  and fast-mode settings work identically in single-sample or
-  samplesheet mode, since they're read once from `params.*` and applied
-  uniformly regardless of how many samples are flowing through the channels.
-- `GVCLASS_SETUP` and `SSUEXTRACT_SETUP` both clone a git repo and build
-  a pixi-managed environment (not a conda package) into `db_dir` once,
-  the same `storeDir`-cached way as the other databases.
-- **GVClass's and SSUextract's own pixi-managed Python environments can
-  fail with `CERTIFICATE_VERIFY_FAILED`** if their dependency lock didn't
-  pull in `ca-certificates`. Both their resource labels include a
-  `beforeScript` that points Python at `certifi`'s bundle as a fallback
-  — harmless no-op if the environment already has valid certs.
+### Troubleshooting: SSH/VPN drop mid-run
 
-### Troubleshooting: a task fails with no error output at all
-
-If a task shows an unusual exit status (a dash `-` instead of a number)
-and both `.command.err` and `.command.log` in its work directory are
-completely empty — not short, genuinely empty — that's not the task
-failing on its own logic. It's the signature of the **outer Nextflow
-process itself having been killed or crashed** while that task was
-still running, orphaning it before it had a chance to write anything.
-
-Common causes: editing/recompiling pipeline files while a run is still
-in progress, a dropped SSH session that wasn't inside `tmux`/`screen`, a
-VM reboot, or manually killing the wrong process.
+A dash `-` exit status with an empty `.command.err` usually means the
+outer Nextflow process itself was killed — an SSH disconnect, VPN
+drop, VM reboot, or manually killing the wrong process.
 
 **Confirm this is what happened:**
 ```bash
@@ -457,16 +407,29 @@ whole-task level, not mid-task) — this is expected, not a sign of a
 deeper problem, especially for long-running steps like `SSU_EXTRACT` or
 `GVCLASS` where getting partway through before a crash is likely.
 
-### Troubleshooting: DAS_Tool fails with a database/dependency error
+### Troubleshooting: GTDB-Tk / pplacer memory errors
 
-DAS_Tool's bioconda package is expected to locate its own bundled
-single-copy-gene database automatically, so `DAS_TOOL`'s script doesn't
-pass `--dbDirectory` explicitly. If a run fails with a
-database-not-found or dependency-not-found error, this is a documented
-rough edge in DAS_Tool itself (see its own README's "Troubleshooting/
-known issues" section) rather than something specific to this pipeline.
-The fix is to add `--dbDirectory <path>` pointing at wherever conda
-installed it — typically findable with:
+If `GTDBTK` fails with a pplacer exception, this is a documented
+GTDB-Tk issue: pplacer's own multi-threading can make the OS report far
+more memory in use than is actually needed, which can trigger an
+out-of-memory kill. GTDB-Tk's own FAQ recommends `--scratch_dir` and
+`--pplacer_cpus 1` — both are already set in this pipeline's `GTDBTK`
+process. If it still happens, check how many CPUs are available on the
+host versus what `threads_gtdbtk` requests.
+
+### Troubleshooting: AVHE VPN required
+
+`as-amoliver-vm2.syr.edu` is unreachable without the Syracuse VPN. Use
+`tmux` to persist sessions across disconnects:
 ```bash
-find $(conda info --base)/envs -iname "db.zip" -path "*das_tool*" 2>/dev/null
+tmux new -s pipeline       # start a session
+tmux attach -t pipeline    # reattach after reconnecting
+# inside tmux: Ctrl+b c (new window), Ctrl+b n/p (switch), Ctrl+b d (detach)
 ```
+
+### Troubleshooting: `work/` directory size
+
+Nextflow's `work/` directory accumulates every task's files, including
+cached ones from old runs. Use `nextflow clean -f -before <run_name>` to
+prune old runs safely without touching ones you might still want to
+`-resume`.
