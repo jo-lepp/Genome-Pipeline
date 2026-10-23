@@ -27,16 +27,21 @@ include { GTDBTK_CLASSIFY }  from './modules/gtdbtk.nf'
 include { GVCLASS_TAXONOMY } from './modules/gvclass.nf'
 include { CMSEARCH_EUK }     from './modules/cmsearch.nf'
 include { SSU_EXTRACT_ALL }  from './modules/cmsearch.nf'
-include { DASTOOL_INTEGRATION } from './modules/dastool.nf'
 
 workflow {
-    def run_metabat2 = (params.run_metabat2 instanceof Boolean) ? params.run_metabat2 : params.run_metabat2.toString().trim().toLowerCase() == 'true'
-    def run_semibin2 = (params.run_semibin2 instanceof Boolean) ? params.run_semibin2 : params.run_semibin2.toString().trim().toLowerCase() == 'true'
-    def run_remag    = (params.run_remag    instanceof Boolean) ? params.run_remag    : params.run_remag.toString().trim().toLowerCase() == 'true'
-    def run_gtdbtk   = (params.run_gtdbtk   instanceof Boolean) ? params.run_gtdbtk   : params.run_gtdbtk.toString().trim().toLowerCase() == 'true'
-    def run_gvclass  = (params.run_gvclass  instanceof Boolean) ? params.run_gvclass  : params.run_gvclass.toString().trim().toLowerCase() == 'true'
+    def drep_ignore_genome_quality = (params.drep_ignore_genome_quality instanceof Boolean)
+        ? params.drep_ignore_genome_quality
+        : params.drep_ignore_genome_quality.toString().trim().toLowerCase() == 'true'
+    def run_gtdbtk   = (params.run_gtdbtk instanceof Boolean) ? params.run_gtdbtk : params.run_gtdbtk.toString().trim().toLowerCase() == 'true'
+    def run_gvclass  = (params.run_gvclass instanceof Boolean) ? params.run_gvclass : params.run_gvclass.toString().trim().toLowerCase() == 'true'
     def run_cmsearch = (params.run_cmsearch instanceof Boolean) ? params.run_cmsearch : params.run_cmsearch.toString().trim().toLowerCase() == 'true'
-    def run_dastool = (params.run_dastool instanceof Boolean) ? params.run_dastool : params.run_dastool.toString().trim().toLowerCase() == 'true'
+
+    if (!(params.binner in ['metabat', 'semibin', 'remag'])) {
+        error("params.binner must be 'metabat', 'semibin', or 'remag'. Got: '${params.binner}'")
+    }
+    if (params.binner == 'remag' && !(params.remag_reject_binner in ['metabat', 'semibin'])) {
+        error("params.remag_reject_binner must be 'metabat' or 'semibin' when params.binner is 'remag'. Got: '${params.remag_reject_binner}'")
+    }
 
 
     if (!(params.read_type in ['hifi', 'ont'])) {
@@ -125,52 +130,52 @@ workflow {
     MAPPING(ch_map_in)
 
     // ================= 3. BINNING (metabat2 / semibin2 / remag) =================
-    ch_assembly_bam = ch_assembly.join(MAPPING.out.bam)
-    BINNING(ch_assembly_bam, run_metabat2, run_semibin2, run_remag)
+    BINNING(ch_assembly_bam, params.binner, params.remag_reject_binner)
 
-    // ================= DAS_TOOL (cross-method bin consensus, independent of dRep) =================
-    ch_dastool_bins_dir = Channel.empty()
-    if (run_dastool) {
-        DASTOOL_INTEGRATION(BINNING.out.all_bin_sets, ch_assembly)
-        ch_dastool_bins_dir = DASTOOL_INTEGRATION.out.bins_dir
-    }
-
-    // ================= 4. DEREPLICATION (metabat + semibin, NOT remag) =================
-    DEREPLICATION(BINNING.out.metabat_bins, BINNING.out.semibin_bins)
+    // ================= 4. DEREPLICATION (metabat + semibin, remag) =================
+    DEREPLICATION(BINNING.out.all_bins, drep_ignore_genome_quality)
 
     // ================= 5. CHECKM2 (metabat + semibin, NOT remag) =================
     CHECKM2_QC(DEREPLICATION.out.derep_dir)
 
     // ================= 6. BUSCO (all bin sets, including remag) =================
-    BUSCO_QC(DEREPLICATION.out.derep_dir, BINNING.out.remag_bins_dir)
+    BUSCO_QC(DEREPLICATION.out.derep_dir)
 
     // ================= 7. GTDB-TK (metabat + semibin, NOT remag) =================
-
+    ch_gtdbtk_summary = Channel.empty()
     if (run_gtdbtk) {
         GTDBTK_CLASSIFY(DEREPLICATION.out.derep_dir)
+        ch_gtdbtk_summary = GTDBTK_CLASSIFY.out.summary
     }
 
     // ================= 8. GVCLASS (all bin sets, including remag) =================
+    ch_gvclass_summary = Channel.empty()
     if (run_gvclass) {
-        GVCLASS_TAXONOMY(
-            DEREPLICATION.out.derep_dir,
-            BINNING.out.remag_bins_dir,
-            BUSCO_QC.out.unzipped_dir,
-            ch_dastool_bins_dir
-        )
+        GVCLASS_TAXONOMY(DEREPLICATION.out.derep_dir)
+        ch_gvclass_summary = GVCLASS_TAXONOMY.out.summary
     }
 
     // ================= fast mode: cmsearch instead of full taxonomy =================
+    ch_ssu_summary = Channel.empty()
     if (run_cmsearch) {
-        if (!(params.fast_mode_tool in ['ssu_extract', 'cmsearch'])) {
-            error("params.fast_mode_tool must be 'ssu_extract' or 'cmsearch', got: '${params.fast_mode_tool}'")
-        }
         if (params.fast_mode_tool == 'ssu_extract') {
             SSU_EXTRACT_ALL(ch_assembly)
+            ch_ssu_summary = SSU_EXTRACT_ALL.out.summary
         } else {
             CMSEARCH_EUK(ch_assembly)
+            ch_ssu_summary = CMSEARCH_EUK.out.summary
         }
     }
+
+    // ---- NEW: compiled QC + taxonomy spreadsheet ----
+    REPORT(
+        CHECKM2_QC.out.quality_report,
+        DEREPLICATION.out.derep_dir,
+        ch_gtdbtk_summary,
+        ch_gvclass_summary,
+        ch_ssu_summary
+    )
+
     workflow.onComplete = {
         try {
             log.info """
