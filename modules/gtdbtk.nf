@@ -51,22 +51,13 @@ process GTDBTK {
  */
 workflow GTDBTK_CLASSIFY {
     take:
-    derep_dir   // tuple(root, label, dereplicated_genomes dir) - from DEREPLICATION.out.derep_dir
+    derep_dir   // tuple(root, dir) - was tuple(root, label, dir)
 
     main:
     GTDBTK_DB()
-
-    ch_gtdbtk_in = derep_dir.map { root, label, dir ->
-        def ext = (label == 'metabat') ? 'fa' : 'fa.gz'
-        def sub = (label == 'metabat') ? "${root}_metabat/gtdbtk" : "${root}_semibin/${label}_model/gtdbtk"
-        tuple(root, label, dir, ext, sub)
-    }
-
-    // same reasoning as CHECKM2_DB: this ran once, so .first() makes it
-    // reusable across every GTDBTK invocation instead of being drained
-    // after the first one.
-    GTDBTK(ch_gtdbtk_in, GTDBTK_DB.out.db_dir.first())
+    GTDBTK(derep_dir, GTDBTK_DB.out.db_dir.first())
 
     emit:
-    gtdbtk_dir = GTDBTK.out.gtdbtk_dir
+    classify_dir = GTDBTK.out.classify_dir
+    summary      = GTDBTK.out.summary
 }
