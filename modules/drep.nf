@@ -43,11 +43,24 @@ process DREP {
     tuple val(root), val(label), path("drep/dereplicated_genomes"), emit: derep_dir
 
     script:
+    def quality_flag = params.drep_ignore_genome_quality ? '--ignoreGenomeQuality' : ''
+    def checkm_setup = params.drep_ignore_genome_quality ? '' : "checkm data setRoot \"\$(pwd)/${checkm1_db}\""
     """
-    checkm data setRoot "${checkm1_db}"
-
-    dRep dereplicate drep -g genomes_in/*.${ext}
-    echo "dereplication done (${label})"
+    ${checkm_setup}
+    # bins may arrive gzipped (SemiBin2) or plain (metabat2/REMAG) - normalize
+    # to plain fasta before dRep ever sees them, so every downstream consumer
+    # (BUSCO, CheckM2, GTDB-Tk, GVClass) can assume uniform, uncompressed input
+    mkdir -p plain_bins
+    for f in bin_*.fa; do
+        if file "\$f" | grep -q gzip; then
+            gunzip -c "\$f" > "plain_bins/\$(basename "\$f")"
+        else
+            cp "\$f" "plain_bins/"
+        fi
+    done
+    
+    dRep dereplicate drep_out -g plain_bins/*.fa ${quality_flag}
+    cp -r drep_out/dereplicated_genomes .
     """
 }
 
