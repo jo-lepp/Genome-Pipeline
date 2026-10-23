@@ -59,7 +59,7 @@ process DREP {
         fi
     done
     
-    dRep dereplicate drep_out -g plain_bins/*.fa --S_algorithm ${quality_flag}
+    dRep dereplicate drep_out -g plain_bins/*.fa --S_algorithm -sizeW1 ${quality_flag}
     cp -r drep_out/dereplicated_genomes .
     """
 }
