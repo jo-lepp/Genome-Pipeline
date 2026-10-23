@@ -1,68 +1,55 @@
-// ---- database download, run once and reused by every predict call ----
 process CHECKM2_DB {
-    label 'qc'
-    conda "bioconda::checkm2"
-    storeDir "${params.db_dir}/checkm2_db"   // <-- replaces publishDir
+    label 'small'
+    storeDir "${params.db_dir}/checkm2_data"
 
     output:
-    path "CheckM2_database/uniref100.KO.1.dmnd", emit: db
+    path "checkm2_db", emit: db_path
 
     script:
     """
-    checkm2 database --download --path . --no_write_json_db
+    checkm2 database --download --path checkm2_db
     """
 }
 
-// ---- checkm2 predict, run once per bin set (metabat/self/soil/global) ----
 process CHECKM2 {
-    tag "${root}:${label}"
-    label 'qc'
+    tag "$root"
+    label 'checkm2'
     conda "bioconda::checkm2"
-    publishDir { "${params.outdir}/${pub_subpath}" }, mode: params.publish_mode
+    publishDir { "${params.outdir}/${root}_checkm2" }, mode: params.publish_mode
 
     input:
-    tuple val(root), val(label), path(derep_dir), val(ext), val(pub_subpath)
-    path db
+    tuple val(root), path(derep_dir)
+    path checkm2_db
 
     output:
-    tuple val(root), val(label), path("checkm2"), emit: checkm2_dir
+    tuple val(root), path("quality_report.tsv"), emit: quality_report
+    path "checkm2_out", emit: checkm2_dir
 
     script:
     """
-    checkm2 predict --threads ${params.threads_checkm2} \\
-        --input "${derep_dir}" --extension .${ext} \\
-        --output_directory checkm2 \\
-        --database_path "${db}"
-
-    echo "checkm2 done (${label})"
+    export CHECKM2DB="\$(pwd)/${checkm2_db}/CheckM2_database/uniref100.KO.1.dmnd"
+    checkm2 predict --threads ${params.threads_checkm2} --input "${derep_dir}" -x fa \\
+        --output-directory checkm2_out
+    cp checkm2_out/quality_report.tsv .
     """
 }
 
 /*
- * Subworkflow: downloads the DB once, then runs checkm2 predict on
- * whatever DEREPLICATION handed back (metabat + whichever SemiBin2
- * models ran) - nothing extra to gate here, since an empty upstream
- * channel (a binner that was turned off) just means nothing to predict on.
+ * Simplified: one dRep output, one CheckM2 run per sample. No more
+ * per-label iteration (metabat/soil/self/global) and no more excluding
+ * remag - with only one binner active per run, there's nothing left to
+ * iterate over.
  */
 workflow CHECKM2_QC {
     take:
-    derep_dir   // tuple(root, label, dereplicated_genomes dir) - from DEREPLICATION.out.derep_dir
+    derep_dir   // tuple(root, dir)
 
     main:
     CHECKM2_DB()
-
-    ch_checkm2_in = derep_dir.map { root, label, dir ->
-        def ext = (label == 'metabat') ? 'fa' : 'fa.gz'
-        def sub = (label == 'metabat') ? "${root}_metabat/checkm2" : "${root}_semibin/${label}_model/checkm2"
-        tuple(root, label, dir, ext, sub)
-    }
-
-    // .first() turns the single CHECKM2_DB output into a reusable "value"
-    // channel so every CHECKM2 call below can consume it, instead of it
-    // being drained after the first invocation like a normal queue channel.
-    CHECKM2(ch_checkm2_in, CHECKM2_DB.out.db.first())
+    CHECKM2(derep_dir, CHECKM2_DB.out.db_path.first())
 
     emit:
-    checkm2_dir = CHECKM2.out.checkm2_dir
+    checkm2_dir     = CHECKM2.out.checkm2_dir
+    quality_report  = CHECKM2.out.quality_report   // feeds REPORT directly
 }
 
