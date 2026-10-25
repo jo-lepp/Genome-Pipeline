@@ -206,13 +206,6 @@ workflow {
         .join(ch_ssu_for_report)
     
     REPORT(ch_report_in)
-    REPORT(
-        CHECKM2_QC.out.quality_report,
-        DEREPLICATION.out.derep_dir,
-        ch_gtdbtk_summary,
-        ch_gvclass_summary,
-        ch_ssu_summary
-    )
 
     workflow.onComplete = {
         try {
