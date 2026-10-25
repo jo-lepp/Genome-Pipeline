@@ -3,7 +3,7 @@
 process GTDBTK_DB {
     label 'taxonomy'
     conda "bioconda::gtdbtk"
-    storeDir "${params.db_dir}/gtdbtk_db"   // <-- replaces publishDir
+    storeDir "${params.db_dir}/gtdbtk_db"
 
     output:
     path "gtdbtk_data", emit: db_dir
@@ -17,45 +17,56 @@ process GTDBTK_DB {
     """
 }
 
-// ---- gtdbtk classify_wf, run once per bin set (metabat/self/soil/global) ----
+// ---- gtdbtk classify_wf, run once per sample on dRep's combined output ----
 process GTDBTK {
-    tag "${root}:${label}"
+    tag "$root"
     label 'taxonomy'
     conda "bioconda::gtdbtk"
-    publishDir { "${params.outdir}/${pub_subpath}" }, mode: params.publish_mode
+    publishDir { "${params.outdir}/${root}_gtdbtk" }, mode: params.publish_mode
 
     input:
-    tuple val(root), val(label), path(derep_dir), val(ext), val(pub_subpath)
+    tuple val(root), path(derep_dir)
     path db_dir
 
     output:
-    tuple val(root), val(label), path("gtdbtk"), emit: gtdbtk_dir
+    tuple val(root), path("gtdbtk"),               emit: classify_dir
+    tuple val(root), path("gtdbtk_summary.tsv"),   emit: summary
 
     script:
     """
     export GTDBTK_DATA_PATH="\$(pwd)/${db_dir}"
     mkdir -p pplacer_scratch
-    gtdbtk classify_wf --genome_dir "${derep_dir}" --out_dir gtdbtk -x .${ext} \\
+    gtdbtk classify_wf --genome_dir "${derep_dir}" --out_dir gtdbtk -x fa \\
         --cpus ${params.threads_gtdbtk} \\
         --pplacer_cpus 1 \\
         --scratch_dir pplacer_scratch
-    echo "bacterial taxonomy done (${label})."
+
+    # classify_wf writes bac120/ar53 summaries separately, whichever apply -
+    # combine into one file so downstream (REPORT) only has one thing to read
+    : > gtdbtk_summary.tsv
+    header_written=false
+    for f in gtdbtk/gtdbtk.bac120.summary.tsv gtdbtk/gtdbtk.ar53.summary.tsv; do
+        if [ -f "\$f" ]; then
+            if [ "\$header_written" = false ]; then
+                cp "\$f" gtdbtk_summary.tsv
+                header_written=true
+            else
+                tail -n +2 "\$f" >> gtdbtk_summary.tsv
+            fi
+        fi
+    done
+
+    echo "bacterial/archaeal taxonomy done."
     """
 }
 
-/*
- * Subworkflow: downloads the reference package once, then classifies
- * whatever DEREPLICATION handed back (metabat + whichever SemiBin2
- * models ran) - same as CHECKM2_QC, nothing extra to gate here since
- * a disabled binner already means an empty upstream channel.
- */
 workflow GTDBTK_CLASSIFY {
     take:
-    derep_dir   // tuple(root, dir) - was tuple(root, label, dir)
+    derep_dir   // tuple(root, dir)
 
     main:
     GTDBTK_DB()
-    GTDBTK(derep_dir, GTDBTK_DB.out.db_dir.first())
+    GTDBTK(derep_dir, GTDBTK_DB.out.db_dir)
 
     emit:
     classify_dir = GTDBTK.out.classify_dir
