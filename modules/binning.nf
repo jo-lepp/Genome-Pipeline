@@ -9,60 +9,8 @@
  * overlap, so dRep just keeps both untouched rather than wastefully
  * trying to dereplicate them against each other.
  */
-
-process DEPTH {
-    tag "$root"
-    label 'binning'
-    conda "bioconda::metabat2"
-
-    input:
-    tuple val(root), path(bam), path(bai)
-
-    output:
-    tuple val(root), path("${root}_depth.txt"), emit: depth
-
-    script:
-    """
-    jgi_summarize_bam_contig_depths --outputDepth "${root}_depth.txt" "${bam}"
-    """
-}
-
-process METABAT2 {
-    tag "$root"
-    label 'binning'
-    conda "bioconda::metabat2"
-    publishDir { "${params.outdir}/${root}_metabat" }, mode: params.publish_mode
-
-    input:
-    tuple val(root), path(assembly), path(depth_path)
-
-    output:
-    tuple val(root), path("bins/*.fa"), emit: bins
-
-    script:
-    """
-    mkdir -p bins
-    metabat2 -i "${assembly}" -a "${depth_path}" -o bins/metabat
-    """
-}
-
-process SEMIBIN2 {
-    tag "${root}:${model}"
-    label 'binning'
-    conda "bioconda::semibin"
-    publishDir { "${params.outdir}/${root}_semibin/${model}_model" }, mode: params.publish_mode
-
-    input:
-    tuple val(root), path(assembly), path(bam), path(bai), val(model), val(mode_flag)
-
-    output:
-    tuple val(root), path("output_bins/*.fa.gz"), emit: bins
-
-    script:
-    """
-    SemiBin2 single_easy_bin --sequencing-type long_read ${mode_flag} -i "${assembly}" -b "${bam}" -o .
-    """
-}
+include { DEPTH; METABAT2; SEMIBIN2 } from './binners.nf'
+include { DEPTH as DEPTH_REJECT; METABAT2 as METABAT2_REJECT; SEMIBIN2 as SEMIBIN2_REJECT } from './binners.nf'
 
 process REMAG {
     tag "$root"
@@ -74,26 +22,14 @@ process REMAG {
     tuple val(root), path(assembly), path(bam), path(bai)
 
     output:
-    tuple val(root), path("bins/*.fa"),                emit: bins
-    tuple val(root), path("*_non_eukaryotic.fasta"),    emit: rejects, optional: true
+    tuple val(root), path("bins/*.fa"),              emit: bins
+    tuple val(root), path("*_non_eukaryotic.fasta"), emit: rejects, optional: true
 
     script:
     """
     remag "${assembly}" -c "${bam}" -o . --save-filtered-contigs
     """
 }
-
-/*
- * Depth + binning for the reject-rebinning path. METABAT2/SEMIBIN2 are
- * reused via aliasing (include ... as ...) so the reject path shares the
- * exact same, already-tested binning logic - the only difference is the
- * input assembly is REMAG's non_eukaryotic.fasta instead of the full
- * myloasm assembly, and depth is recalculated against just those contigs
- * using the SAME original BAM (jgi_summarize_bam_contig_depths only
- * reports depth for contigs actually present in the given fasta, so
- * there's no need to re-align reads against the reduced contig set).
- */
-include { DEPTH as DEPTH_REJECT; METABAT2 as METABAT2_REJECT; SEMIBIN2 as SEMIBIN2_REJECT } from './binning.nf'
 
 workflow BINNING {
     take:
