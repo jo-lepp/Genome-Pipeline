@@ -27,6 +27,7 @@ include { GTDBTK_CLASSIFY }  from './modules/gtdbtk.nf'
 include { GVCLASS_TAXONOMY } from './modules/gvclass.nf'
 include { CMSEARCH_EUK }     from './modules/cmsearch.nf'
 include { SSU_EXTRACT_ALL }  from './modules/cmsearch.nf'
+include { REPORT } from './modules/report.nf'
 
 workflow {
     def drep_ignore_genome_quality = (params.drep_ignore_genome_quality instanceof Boolean)
@@ -135,6 +136,7 @@ workflow {
     // ================= 2. MAPPING =================
     ch_map_in = ch_assembly.join(ch_input)
     MAPPING(ch_map_in)
+    ch_assembly_bam = ch_assembly.join(MAPPING.out.bam)
 
     // ================= 3. BINNING (metabat2 / semibin2 / remag) =================
     BINNING(ch_assembly_bam, params.binner, params.remag_reject_binner)
@@ -164,7 +166,7 @@ workflow {
 
     // ================= fast mode: cmsearch instead of full taxonomy =================
     ch_ssu_summary = Channel.empty()
-    if (run_cmsearch) {
+    if (run_ssu_screen) {
         if (params.fast_mode_tool == 'ssu_extract') {
             SSU_EXTRACT_ALL(ch_assembly)
             ch_ssu_summary = SSU_EXTRACT_ALL.out.summary
