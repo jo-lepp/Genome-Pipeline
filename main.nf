@@ -33,8 +33,10 @@ workflow {
         ? params.drep_ignore_genome_quality
         : params.drep_ignore_genome_quality.toString().trim().toLowerCase() == 'true'
     def run_gtdbtk   = (params.run_gtdbtk instanceof Boolean) ? params.run_gtdbtk : params.run_gtdbtk.toString().trim().toLowerCase() == 'true'
-    def run_gvclass  = (params.run_gvclass instanceof Boolean) ? params.run_gvclass : params.run_gvclass.toString().trim().toLowerCase() == 'true'
-    def run_cmsearch = (params.run_cmsearch instanceof Boolean) ? params.run_cmsearch : params.run_cmsearch.toString().trim().toLowerCase() == 'true'
+    def fast_mode       = (params.fast_mode instanceof Boolean) ? params.fast_mode : params.fast_mode.toString().trim().toLowerCase() == 'true'
+    def run_gvclass     = (params.run_gvclass instanceof Boolean) ? params.run_gvclass : params.run_gvclass.toString().trim().toLowerCase() == 'true'
+    def run_ssu_screen  = (params.run_ssu_screen instanceof Boolean) ? params.run_ssu_screen : params.run_ssu_screen.toString().trim().toLowerCase() == 'true'
+    def fast_mode_tool  = params.fast_mode_tool
 
     if (!(params.binner in ['metabat', 'semibin', 'remag'])) {
         error("params.binner must be 'metabat', 'semibin', or 'remag'. Got: '${params.binner}'")
@@ -43,15 +45,20 @@ workflow {
         error("params.remag_reject_binner must be 'metabat' or 'semibin' when params.binner is 'remag'. Got: '${params.remag_reject_binner}'")
     }
 
-
     if (!(params.read_type in ['hifi', 'ont'])) {
         error("params.read_type must be 'hifi' or 'ont', got: '${params.read_type}'")
     }
     if (!(params.read_type in ['hifi', 'ont'])) {
         exit 1, "params.read_type must be 'hifi' or 'ont', got: '${params.read_type}'"
     }
-    if (params.gvclass_input == 'dastool' && !run_dastool) {
-        error("params.gvclass_input is 'dastool' but run_dastool is false - DAS_Tool must run to produce the bins GVClass would use. Either enable run_dastool or pick a different gvclass_input.")
+    if (!fast_mode && !(fast_mode_tool in ['ssu_extract', 'cmsearch'])) {
+        error("params.fast_mode_tool must be 'ssu_extract' or 'cmsearch'. Got: '${fast_mode_tool}'")
+    }
+
+    if (fast_mode) {
+        fast_mode_tool = 'cmsearch'
+        run_gvclass    = false
+        run_ssu_screen = true
     }
 
     // ================= 0. BUILD PER-SAMPLE CHANNELS =================
@@ -166,8 +173,15 @@ workflow {
             ch_ssu_summary = CMSEARCH_EUK.out.summary
         }
     }
+    if (run_ssu_screen) {
+        if (fast_mode_tool == 'ssu_extract') {
+            SSU_EXTRACT_ALL(ch_assembly)
+        } else {
+            CMSEARCH_EUK(ch_assembly)
+        }
+    }
 
-    // ---- NEW: compiled QC + taxonomy spreadsheet ----
+    // ---- compiled QC + taxonomy spreadsheet ----
     REPORT(
         CHECKM2_QC.out.quality_report,
         DEREPLICATION.out.derep_dir,
