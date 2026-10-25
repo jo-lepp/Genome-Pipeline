@@ -7,10 +7,10 @@ per-bin spreadsheet.
 ## Pipeline stages
 
 ```
-0. Build per-sample channels   - single sample, pre-assembled, or samplesheet
-1. MYLOASM                     - long-read assembly (skipped if --assembly given)
-2. MAPPING                     - minimap2 + samtools sort/index
-3. BINNING                     - exactly ONE binner runs: metabat2, semibin2, or remag
+0. Build per-sample channels    - single sample, pre-assembled, or samplesheet
+1. MYLOASM                      - long-read assembly (skipped if --assembly given)
+2. MAPPING                      - minimap2 + samtools sort/index
+3. BINNING                      - exactly ONE binner runs: metabat2, semibin2, or remag
    (remag only)                  REMAG's rejected (bacterial-looking) contigs get
                                   re-binned by a second, user-chosen binner; both
                                   sets of bins are merged before dereplication
@@ -18,16 +18,18 @@ per-bin spreadsheet.
                                   [--drep_ignore_genome_quality skips CheckM entirely]
 5. CHECKM2_QC                   - completeness/contamination/assembly stats
 6. BUSCO_QC                     - eukaryotic completeness QC
-7. GTDBTK_CLASSIFY               - bacterial/archaeal taxonomy             [toggle]
-8. GVCLASS_TAXONOMY               - eukaryotic/viral taxonomy             [toggle]
-   fast mode (SSU_EXTRACT_ALL or CMSEARCH_EUK) - alternative to 7 & 8     [toggle]
-9. REPORT                      - compiles CheckM2 + GTDB-Tk + GVClass + SSUextract
+7. GTDBTK_CLASSIFY              - bacterial/archaeal taxonomy             [toggle]
+8. GVCLASS_TAXONOMY             - eukaryotic/viral taxonomy               [toggle]
+9. SSU screening (SSU_EXTRACT_ALL or CMSEARCH_EUK) - 16S/18S rRNA, runs   [toggle]
+   alongside 7 & 8 by default - see Fast mode below
+10. REPORT                     - compiles CheckM2 + GTDB-Tk + GVClass + SSU screening
                                   into one per-bin spreadsheet (<root>_bin_report.xlsx)
 ```
 
-Steps 7, 8, and the fast-mode step are independently toggleable. Only one
-binner runs per invocation — see [Binner selection](#binner-selection)
-below. The pipeline prints its total run time when it finishes — see
+Steps 7, 8, and 9 are independently toggleable, and all three run by
+default. Only one binner runs per invocation — see
+[Binner selection](#binner-selection) below. The pipeline prints its
+total run time when it finishes — see
 [Runtime announcement](#runtime-announcement) below.
 
 ## Requirements
@@ -52,7 +54,7 @@ modules/
   busco.nf                  BUSCO + BUSCO_QC subworkflow
   gtdbtk.nf                 GTDBTK_DB, GTDBTK + GTDBTK_CLASSIFY subworkflow
   gvclass.nf                GVCLASS_SETUP, FNA_PREP, GVCLASS, COLLECT_SUBSAMPLE_REPORT + GVCLASS_TAXONOMY subworkflow
-  cmsearch.nf                SSUextract (default) or legacy cmsearch, fast-mode alternative to 7 & 8
+  cmsearch.nf                SSUextract (default) or legacy cmsearch, SSU screening alongside full taxonomy
   report.nf                  REPORT: compiles the final per-bin spreadsheet
 ```
 
@@ -71,9 +73,11 @@ modules/
 | `remag_reject_binner` | `'metabat'` | `'metabat'` or `'semibin'` — only used when `binner` is `'remag'` |
 | `semibin_models` | `'soil'` | comma-separated SemiBin2 model(s); used when `binner` (or `remag_reject_binner`) is `'semibin'` |
 | `drep_ignore_genome_quality` | `false` | skip CheckM entirely in dRep — see [dRep genome quality filtering](#drep-genome-quality-filtering) |
-| `run_gtdbtk` / `run_gvclass` | `true` | toggle full taxonomic classification steps |
-| `run_cmsearch` | `false` | enable fast mode (alternative to GTDB-Tk/GVClass) |
-| `fast_mode_tool` | `'ssu_extract'` | `'ssu_extract'` (default) or `'cmsearch'` (legacy) |
+| `run_gtdbtk` | `true` | bacterial/archaeal taxonomy |
+| `run_gvclass` | `true` | eukaryotic/viral taxonomy |
+| `run_ssu_screen` | `true` | 16S/18S rRNA screening — see [Fast mode](#fast-mode-ssu-screening) |
+| `fast_mode_tool` | `'ssu_extract'` | `'ssu_extract'` (default) or `'cmsearch'` (legacy) — which tool `run_ssu_screen` uses |
+| `fast_mode` | `false` | preset: switches to `cmsearch`, disables GVClass — see [Fast mode](#fast-mode-ssu-screening) |
 | `gvclass_max_bin_size_mb` | `50` | bins larger than this are **subsampled**, not excluded — see [Bin subsampling](#gvclass-bin-subsampling) |
 | `busco_lineage` | `'eukaryota_odb10'` | BUSCO lineage dataset |
 
@@ -179,12 +183,16 @@ This is **off by default** — only enable it when you specifically expect
 genomes CheckM would misjudge; for an all-bacterial sample, the default
 quality filtering is still the safer choice.
 
-## Fast mode: SSUextract vs. legacy cmsearch
+## Fast mode: SSU screening
 
-`--run_cmsearch true` enables a fast alternative to full taxonomic
-classification (`GTDBTK_CLASSIFY`/`GVCLASS_TAXONOMY`), extracting and
-classifying 16S/18S rRNA genes directly from the assembly instead.
-`fast_mode_tool` picks which implementation:
+By default, this pipeline runs **everything**: full bacterial/archaeal
+taxonomy (`GTDB-Tk`), full eukaryotic/viral taxonomy (`GVClass`), *and*
+lightweight 16S/18S rRNA screening (`run_ssu_screen`) — the three aren't
+mutually exclusive, and all three run side by side unless you turn one
+off.
+
+`run_ssu_screen` controls whether that rRNA screening step runs at all;
+`fast_mode_tool` picks which implementation it uses:
 
 - `'ssu_extract'` (default): the actively maintained
   [SSUextract](https://github.com/NeLLi-team/ssuextract) pipeline,
@@ -192,13 +200,36 @@ classifying 16S/18S rRNA genes directly from the assembly instead.
 - `'cmsearch'` (legacy): a single Rfam covariance model (RF01960),
   eukaryotes only.
 
-Fast mode operates directly on the assembly — it never depends on
-`BINNING` or `DEREPLICATION`, so it runs independently of whichever
-binner you chose.
+This screening step operates directly on the assembly — it never
+depends on `BINNING` or `DEREPLICATION`, so it runs independently of
+whichever binner you chose, and independently of GTDB-Tk/GVClass too.
 
 ```bash
---run_cmsearch true                          # default tool: ssu_extract
---run_cmsearch true --fast_mode_tool cmsearch  # legacy single-model path
+--run_ssu_screen false   # turn screening off entirely
+--fast_mode_tool cmsearch  # use the legacy single-model tool instead of SSUextract
+```
+
+### The `--fast_mode` preset
+
+If you actually want a fast, lightweight run — screening only, no full
+taxonomy — `--fast_mode true` is a single flag that does three things at
+once, overriding whatever `fast_mode_tool`/`run_gvclass`/`run_ssu_screen`
+were otherwise set to:
+
+1. switches `fast_mode_tool` to `'cmsearch'` (the lighter tool)
+2. disables `GVCLASS_TAXONOMY` entirely
+3. forces `run_ssu_screen` on (so the fast path actually runs something)
+
+`GTDB-Tk` is **not** affected by `fast_mode` — it keeps whatever
+`run_gtdbtk` says, on by default. If you want a true minimal run, turn
+it off explicitly too:
+
+```bash
+# fast preset: cmsearch screening, GVClass off, GTDB-Tk still on by default
+--fast_mode true
+
+# fast preset + no bacterial/archaeal taxonomy either
+--fast_mode true --run_gtdbtk false
 ```
 
 ## GVClass bin subsampling
@@ -232,9 +263,9 @@ The final step, `REPORT`, compiles everything into one per-bin workbook:
   classification wasn't available) and `red_value`
 - **GVClass's `gvclass_summary.tsv`** (if `run_gvclass`) —
   `GVclass_classification`
-- **SSUextract's summary** (if `run_cmsearch`) — `ssuextract_tax` and
-  `SSU_seq`, attached to whichever bin actually contains the contig the
-  rRNA hit came from (left blank for every other bin)
+- **SSU screening's summary** (if `run_ssu_screen`) — `ssuextract_tax`
+  and `SSU_seq`, attached to whichever bin actually contains the contig
+  the rRNA hit came from (left blank for every other bin)
 
 Any toggle that's off, or a tool output that's missing or has drifted in
 format, fills that section's columns with `N/A` rather than failing the
@@ -246,11 +277,11 @@ battle-tested yet:**
   searches for any column containing "taxonomy" or "classification" in
   GVClass's own header. Worth double-checking it picked the right one
   against a real run.
-- The SSUextract-to-bin matching (scanning every bin fasta's headers for
-  the rRNA hit's contig ID) is this pipeline's own heuristic, not
-  something SSUextract or any other tool does natively — it reproduces
-  the pattern of "one bin gets the hit, others are blank," but hasn't
-  been validated against a real multi-bin run yet.
+- The SSU-screening-to-bin matching (scanning every bin fasta's headers
+  for the rRNA hit's contig ID) is this pipeline's own heuristic, not
+  something SSUextract/cmsearch or any other tool does natively — it
+  reproduces the pattern of "one bin gets the hit, others are blank,"
+  but hasn't been validated against a real multi-bin run yet.
 
 ## Usage examples
 
@@ -261,7 +292,10 @@ database cache). A relative path resolves relative to wherever you run
 repo root every time. Use an absolute path instead for anything that
 needs to resolve the same way regardless of your current directory.
 
-**1. Basic single-sample run — metabat2 (default), full taxonomy**
+**1. Basic single-sample run — everything on by default**
+
+metabat2 binning, full GTDB-Tk + GVClass taxonomy, and SSUextract
+screening all run:
 ```bash
 nextflow run main.nf \
   --input_fgz data/sample01.fastq.gz \
@@ -304,28 +338,24 @@ nextflow run main.nf \
   -resume
 ```
 
-**5. Fast mode only, skip full taxonomy**
+**5. Fast preset — screening only, no full taxonomy at all**
 ```bash
 nextflow run main.nf \
   --input_fgz data/sample01.fastq.gz \
   --outdir    results/sample01_fast \
   --db_dir    refdbs \
-  --run_gtdbtk     false \
-  --run_gvclass    false \
-  --run_cmsearch   true \
+  --fast_mode true \
+  --run_gtdbtk false \
   -resume
 ```
 
-**6. Legacy cmsearch fast mode**
+**6. Full taxonomy only, screening turned off**
 ```bash
 nextflow run main.nf \
   --input_fgz data/sample01.fastq.gz \
-  --outdir     results/sample01_fast_legacy \
+  --outdir     results/sample01_full_tax_only \
   --db_dir     refdbs \
-  --run_gtdbtk    false \
-  --run_gvclass   false \
-  --run_cmsearch  true \
-  --fast_mode_tool cmsearch \
+  --run_ssu_screen false \
   -resume
 ```
 
@@ -339,15 +369,14 @@ nextflow run main.nf \
   -resume
 ```
 
-**8. Multi-sample, fast mode only**
+**8. Multi-sample, fast preset**
 ```bash
 nextflow run main.nf \
   --samplesheet      data/batch1_samples.csv \
   --outdir           results/batch1_fast \
   --db_dir           refdbs \
+  --fast_mode        true \
   --run_gtdbtk       false \
-  --run_gvclass      false \
-  --run_cmsearch     true \
   -resume
 ```
 
@@ -398,7 +427,7 @@ Everything that completed successfully before the crash is reused from
 cache. The one task that was actually running when the crash happened
 will need to re-run from scratch (Nextflow's caching works at the
 whole-task level, not mid-task) — this is expected, not a sign of a
-deeper problem, especially for long-running steps like `SSU_EXTRACT` or
+deeper problem, especially for long-running steps like SSU screening or
 `GVCLASS` where getting partway through before a crash is likely.
 
 ### Troubleshooting: GTDB-Tk / pplacer memory errors
