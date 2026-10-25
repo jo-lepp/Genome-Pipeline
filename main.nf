@@ -186,18 +186,18 @@ workflow {
     // ---- compiled QC + taxonomy spreadsheet ----
 
     def no_file = file("NO_FILE")
-    
+
     ch_gtdbtk_for_report = run_gtdbtk
         ? ch_gtdbtk_summary
-        : CHECKM2_QC.out.quality_report.map { root, _ -> tuple(root, no_file) }
+        : CHECKM2_QC.out.quality_report.map { root, quality_report -> tuple(root, no_file) }
     
     ch_gvclass_for_report = run_gvclass
         ? ch_gvclass_summary
-        : CHECKM2_QC.out.quality_report.map { root, _ -> tuple(root, no_file) }
+        : CHECKM2_QC.out.quality_report.map { root, quality_report -> tuple(root, no_file) }
     
     ch_ssu_for_report = run_ssu_screen
         ? ch_ssu_summary
-        : CHECKM2_QC.out.quality_report.map { root, _ -> tuple(root, no_file) }
+        : CHECKM2_QC.out.quality_report.map { root, quality_report -> tuple(root, no_file) }
     
     ch_report_in = CHECKM2_QC.out.quality_report
         .join(DEREPLICATION.out.derep_dir)
