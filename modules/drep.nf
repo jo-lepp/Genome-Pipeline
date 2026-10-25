@@ -1,6 +1,9 @@
 /*
- * NOTE: dRep is never run on REMAG bins in the original script - only
- * metabat2 and the three SemiBin2 models get dereplicated.
+ * NOTE: dRep is never run on REMAG bins specifically as their own category
+ * anymore - with the single-binner architecture, BINNING.out.all_bins
+ * already contains whichever bins actually resulted (one binner's output,
+ * or REMAG's euk bins + the secondary binner's bacterial bins merged).
+ * DREP runs once per sample on that combined set.
  *
  * IMPORTANT: dRep's default filtering step internally shells out to
  * checkM v1 (a separate, older tool from CheckM2, despite the similar
@@ -8,10 +11,10 @@
  * needs its own reference database registered via `checkm data setRoot`
  * before it will run at all - without it, dRep fails at Step 1 with
  * "!!! checkM failed !!!" and silently produces zero dereplicated
- * genomes, even though dRep itself exits with status 0.
+ * genomes, even though dRep itself exits with status 0. This is skipped
+ * entirely when drep_ignore_genome_quality is true.
  */
 
-// ---- checkM v1 reference database, downloaded once ----
 process CHECKM1_DB {
     label 'binning'
     conda "bioconda::drep conda-forge::python=3.10 conda-forge::setuptools=75.8.2"
@@ -30,17 +33,17 @@ process CHECKM1_DB {
 }
 
 process DREP {
-    tag "${root}:${label}"
+    tag "$root"
     label 'binning'
     conda "bioconda::drep conda-forge::python=3.10 conda-forge::setuptools=75.8.2"
-    publishDir { "${params.outdir}/${pub_subpath}" }, mode: params.publish_mode
+    publishDir { "${params.outdir}/${root}_drep" }, mode: params.publish_mode
 
     input:
-    tuple val(root), val(label), path(genomes, stageAs: 'genomes_in/*'), val(ext), val(pub_subpath)
+    tuple val(root), path(bins, stageAs: 'bin_??.fa')
     path checkm1_db
 
     output:
-    tuple val(root), val(label), path("drep/dereplicated_genomes"), emit: derep_dir
+    tuple val(root), path("dereplicated_genomes"), emit: derep_dir
 
     script:
     def quality_flag = params.drep_ignore_genome_quality ? '--ignoreGenomeQuality' : ''
@@ -58,33 +61,25 @@ process DREP {
             cp "\$f" "plain_bins/"
         fi
     done
-    
-    dRep dereplicate drep_out -g plain_bins/*.fa --S_algorithm ANImf -sizeW1 ${quality_flag}
+
+    dRep dereplicate drep_out -g plain_bins/*.fa --S_algorithm ANImf ${quality_flag}
     cp -r drep_out/dereplicated_genomes .
     """
 }
 
-/*
- * Subworkflow: takes the bin channels emitted by BINNING and runs dRep
- * on whichever of metabat2/semibin2 actually produced bins.
- */
 workflow DEREPLICATION {
     take:
-    metabat_bins   // tuple(root, [fa files])          - from BINNING.out.metabat_bins
-    semibin_bins   // tuple(root, model, [fa.gz files]) - from BINNING.out.semibin_bins
+    all_bins                    // tuple(root, [bin fasta paths]) - from BINNING.out.all_bins
+    drep_ignore_genome_quality  // boolean
 
     main:
-    CHECKM1_DB()
-
-    ch_drep_metabat = metabat_bins.map { root, fa ->
-        tuple(root, 'metabat', fa, 'fa', "${root}_metabat/drep")
-    }
-    ch_drep_semibin = semibin_bins.map { root, model, fagz ->
-        tuple(root, model, fagz, 'fa.gz', "${root}_semibin/${model}_model/drep")
+    ch_checkm1_db = Channel.value(file("NO_FILE"))
+    if (!drep_ignore_genome_quality) {
+        CHECKM1_DB()
+        ch_checkm1_db = CHECKM1_DB.out.db_dir
     }
 
-    ch_drep_in = ch_drep_metabat.mix(ch_drep_semibin)
-    DREP(ch_drep_in, CHECKM1_DB.out.db_dir.first())
+    DREP(all_bins, ch_checkm1_db.first())
 
     emit:
     derep_dir = DREP.out.derep_dir
