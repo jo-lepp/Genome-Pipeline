@@ -1,5 +1,6 @@
 process CHECKM2_DB {
     label 'small'
+    conda "bioconda::checkm2"
     storeDir "${params.db_dir}/checkm2_data"
 
     output:
