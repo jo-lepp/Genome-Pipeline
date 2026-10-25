@@ -175,13 +175,6 @@ workflow {
             ch_ssu_summary = CMSEARCH_EUK.out.summary
         }
     }
-    if (run_ssu_screen) {
-        if (fast_mode_tool == 'ssu_extract') {
-            SSU_EXTRACT_ALL(ch_assembly)
-        } else {
-            CMSEARCH_EUK(ch_assembly)
-        }
-    }
 
     // ---- compiled QC + taxonomy spreadsheet ----
 
