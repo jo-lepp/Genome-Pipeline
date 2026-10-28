@@ -65,7 +65,7 @@ process GVCLASS {
     script:
     """
     cd "${install_dir}"
-    pixi run gvclass "\$(pwd)/../${fna_dir}" -o "\$(pwd)/../gvclass_out" -t ${params.threads_gvclass}
+    ./gvclass "\$(pwd)/../${fna_dir}" "\$(pwd)/../gvclass_out" -t ${params.threads_gvclass}
     cd ..
     cp gvclass_out/gvclass_summary.tsv .
     """
