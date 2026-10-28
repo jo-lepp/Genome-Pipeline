@@ -21,7 +21,7 @@ process GVCLASS_SETUP {
 process FNA_PREP {
     tag "$root"
     label 'gvclass'
-    conda "conda-forge::genometools-genometools"
+    conda "bioconda::genometools-genometools"
 
     input:
     tuple val(root), path(derep_dir)
