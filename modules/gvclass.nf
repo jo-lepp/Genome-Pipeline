@@ -62,11 +62,12 @@ process GVCLASS {
     tuple val(root), path("gvclass_summary.tsv"), emit: summary
     path "gvclass_out", emit: gvclass_dir
 
-    script:
+     script:
     """
+    task_dir="\$(pwd)"
     cd "${install_dir}"
-    pixi run ./gvclass -o "\$(pwd)/../gvclass_out" -t ${params.threads_gvclass} "\$(pwd)/../${fna_dir}"
-    cd ..
+    pixi run ./gvclass -o "\${task_dir}/gvclass_out" -t ${params.threads_gvclass} "\${task_dir}/${fna_dir}"
+    cd "\${task_dir}"
     cp gvclass_out/gvclass_summary.tsv .
     """
 }
