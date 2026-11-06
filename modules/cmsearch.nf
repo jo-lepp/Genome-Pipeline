@@ -47,7 +47,7 @@ process SSU_EXTRACT {
 
     output:
     tuple val(root), path("results"), emit: results_dir
-    path "results/cmsearch_summary.tsv", emit: summary, optional: true
+    tuple val(root), path("results/cmsearch_summary.tsv"), emit: summary, optional: true
     path "results/extracted/*.fna", emit: extracted_fastas, optional: true
 
     script:
