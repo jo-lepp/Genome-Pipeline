@@ -149,22 +149,3 @@ workflow CMSEARCH_EUK {
     summary = CMSEARCH.out.summary
     tblout  = CMSEARCH.out.tblout
 }
-
-/*
- * Subworkflow: downloads the CM once, runs cmsearch + extraction per sample.
- */
-workflow CMSEARCH_EUK {
-    take:
-    assembly   // tuple(root, mylo_assembly) - e.g. MYLOASM.out.assembly
-
-    main:
-    CM_MODEL()
-
-    // .first(): same reasoning as every other one-time DB download in this
-    // pipeline - built once, reused by every CMSEARCH call.
-    CMSEARCH(assembly, CM_MODEL.out.cm_file.first())
-
-    emit:
-    ssu_fa = CMSEARCH.out.ssu_fa
-    tblout = CMSEARCH.out.tblout
-}
