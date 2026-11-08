@@ -117,7 +117,7 @@ process CMSEARCH {
     # it genuinely cannot assign a species/taxon name. The taxonomy column
     # records that limitation honestly rather than fabricating a classification.
     : > ${root}_extracted_ssu.fa
-    echo -e "contig_id\\ttaxonomy\\tsequence" > ${root}_cmsearch_summary.tsv
+    echo -e "contig_name\\ttaxonomy\\tquery_sequence" > ${root}_cmsearch_summary.tsv
 
     grep -v "^#" ${root}_ssu_hits.tblout | awk '{print \$1, \$8, \$9, \$10}' | \\
     while read -r tgt tfrom tto strand; do
