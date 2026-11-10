@@ -1,8 +1,3 @@
-/*
- * UNZIP_BINS is gone: DREP now always hands every consumer plain,
- * uncompressed fasta (see the drep.nf fix above), so there's nothing left
- * to unzip here. BUSCO just runs directly against dRep's output.
- */
 process BUSCO {
     tag "$root"
     label 'busco'
@@ -13,7 +8,8 @@ process BUSCO {
     tuple val(root), path(derep_dir)
 
     output:
-    tuple val(root), path("busco_out"), emit: busco_dir
+    tuple val(root), path("busco_out"),                      emit: busco_dir
+    tuple val(root), path("busco_out/batch_summary.txt"),    emit: summary
 
     script:
     """
@@ -24,11 +20,12 @@ process BUSCO {
 
 workflow BUSCO_QC {
     take:
-    derep_dir   // tuple(root, dir)
+    derep_dir
 
     main:
     BUSCO(derep_dir)
 
     emit:
     busco_dir = BUSCO.out.busco_dir
+    summary   = BUSCO.out.summary
 }
