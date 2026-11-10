@@ -194,6 +194,7 @@ workflow {
     
     ch_report_in = CHECKM2_QC.out.quality_report
         .join(DEREPLICATION.out.derep_dir)
+        .join(BUSCO_QC.out.summary)
         .join(ch_gtdbtk_for_report)
         .join(ch_gvclass_for_report)
         .join(ch_ssu_for_report)
