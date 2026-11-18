@@ -1,21 +1,7 @@
-process CHECKM2_DB {
-    label 'small'
-    conda "bioconda::checkm2"
-    storeDir "${params.db_dir}/checkm2_data"
-
-    output:
-    path "checkm2_db", emit: db_path
-
-    script:
-    """
-    checkm2 database --download --path checkm2_db
-    """
-}
-
 process CHECKM2 {
     tag "$root"
     label 'checkm2'
-    conda "bioconda::checkm2"
+    conda "${projectDir}/envs/checkm2.yml"
     publishDir { "${params.outdir}/${root}_checkm2" }, mode: params.publish_mode
 
     input:
@@ -29,7 +15,7 @@ process CHECKM2 {
     script:
     """
     export CHECKM2DB="\$(pwd)/${checkm2_db}/CheckM2_database/uniref100.KO.1.dmnd"
-    checkm2 predict --threads ${params.threads_checkm2} --input "${derep_dir}" -x fa \\
+    checkm2 predict --threads ${task.cpus} --input "${derep_dir}" -x fa \\
         --output-directory checkm2_out
     cp checkm2_out/quality_report.tsv .
     """
@@ -46,11 +32,10 @@ workflow CHECKM2_QC {
     derep_dir   // tuple(root, dir)
 
     main:
-    CHECKM2_DB()
-    CHECKM2(derep_dir, CHECKM2_DB.out.db_path.first())
+    ch_db = Channel.value(file("${params.db_dir}/checkm2_data/checkm2_db", checkIfExists: true))
+    CHECKM2(derep_dir, ch_db)
 
     emit:
     checkm2_dir     = CHECKM2.out.checkm2_dir
     quality_report  = CHECKM2.out.quality_report   // feeds REPORT directly
 }
-

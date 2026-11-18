@@ -1,7 +1,7 @@
 process MAPPING {
     tag "$root"
     label 'mapping'
-    conda "bioconda::minimap2 bioconda::samtools"
+    conda "${projectDir}/envs/mapping.yml"
     publishDir "${params.outdir}", mode: params.publish_mode, pattern: "*.{sam,bam,bai}"
 
     input:

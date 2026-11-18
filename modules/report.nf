@@ -1,7 +1,7 @@
 process REPORT {
     tag "$root"
     label 'small'
-    conda "conda-forge::pandas conda-forge::openpyxl"
+    conda "${projectDir}/envs/report.yml"
     publishDir "${params.outdir}", mode: params.publish_mode
 
     input:
@@ -74,8 +74,8 @@ process REPORT {
             (single_col,    "BUSCO_Complete_Single"),
             (dup_col,       "BUSCO_Complete_Duplicated"),
             (frag_col,      "BUSCO_Fragmented"),
-            (missing_col,   "BUSCO_Missing"),
-            (nmarkers_col,  "BUSCO_n_markers"),
+            (missing_col,  "BUSCO_Missing"),
+            (nmarkers_col, "BUSCO_n_markers"),
         ]:
             if col is not None:
                 rename_map[col] = label

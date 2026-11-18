@@ -1,0 +1,8 @@
+# MAPPING: minimap2 + samtools sort/index
+name: gp_mapping
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - minimap2
+  - samtools

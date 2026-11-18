@@ -1,0 +1,8 @@
+# SEMIBIN2. CPU-only PyTorch build forced; drop the pytorch line if you want GPU.
+name: gp_semibin
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - semibin
+  - "pytorch=*=cpu*"

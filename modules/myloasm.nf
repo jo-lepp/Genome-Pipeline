@@ -1,7 +1,7 @@
 process MYLOASM {
     tag "$root"
     label 'assembly'
-    conda "bioconda::myloasm"
+    conda "${projectDir}/envs/myloasm.yml"
     publishDir { "${params.outdir}/${root}_myloasm" }, mode: params.publish_mode
     
     input:

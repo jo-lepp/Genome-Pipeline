@@ -1,0 +1,7 @@
+# GTDBTK: bacterial taxonomy. Version must match the GTDB data release in params.
+name: gp_gtdbtk
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - gtdbtk

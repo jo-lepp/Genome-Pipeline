@@ -1,7 +1,7 @@
 process DEPTH {
     tag "$root"
     label 'binning'
-    conda "bioconda::metabat2"
+    conda "${projectDir}/envs/metabat2.yml"
 
     input:
     tuple val(root), path(bam), path(bai)
@@ -11,6 +11,7 @@ process DEPTH {
 
     script:
     """
+    export OMP_NUM_THREADS=${task.cpus}
     jgi_summarize_bam_contig_depths --outputDepth "${root}_depth.txt" "${bam}"
     """
 }
@@ -18,7 +19,7 @@ process DEPTH {
 process METABAT2 {
     tag "$root"
     label 'binning'
-    conda "bioconda::metabat2"
+    conda "${projectDir}/envs/metabat2.yml"
     publishDir { "${params.outdir}/${root}_metabat" }, mode: params.publish_mode
 
     input:
@@ -30,14 +31,14 @@ process METABAT2 {
     script:
     """
     mkdir -p bins
-    metabat2 -i "${assembly}" -a "${depth_path}" -o bins/metabat
+    metabat2 -i "${assembly}" -a "${depth_path}" -o bins/metabat -t ${task.cpus}
     """
 }
 
 process SEMIBIN2 {
     tag "${root}:${model}"
     label 'binning'
-    conda "bioconda::semibin"
+    conda "${projectDir}/envs/semibin.yml"
     publishDir { "${params.outdir}/${root}_semibin/${model}_model" }, mode: params.publish_mode
 
     input:
@@ -48,6 +49,6 @@ process SEMIBIN2 {
 
     script:
     """
-    SemiBin2 single_easy_bin --sequencing-type long_read ${mode_flag} -i "${assembly}" -b "${bam}" -o .
+    SemiBin2 single_easy_bin --sequencing-type long_read ${mode_flag} -i "${assembly}" -b "${bam}" -o . -t ${task.cpus}
     """
 }

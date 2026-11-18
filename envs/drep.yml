@@ -1,0 +1,11 @@
+# DREP: dRep + CheckM1 in one env. Pins carried from your zip draft.
+name: gp_drep
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - setuptools=75.8.2
+  - drep
+  - checkm-genome
+  - "pandas<2"

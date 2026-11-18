@@ -15,27 +15,10 @@
  * entirely when drep_ignore_genome_quality is true.
  */
 
-process CHECKM1_DB {
-    label 'binning'
-    conda "bioconda::drep conda-forge::python=3.10 conda-forge::setuptools=75.8.2"
-    storeDir "${params.db_dir}/checkm1_db"
-
-    output:
-    path "checkm_data", emit: db_dir
-
-    script:
-    """
-    wget -O checkm_data.tar.gz "${params.checkm1_data_url}"
-    mkdir -p checkm_data
-    tar -xzf checkm_data.tar.gz -C checkm_data
-    rm checkm_data.tar.gz
-    """
-}
-
 process DREP {
     tag "$root"
     label 'binning'
-    conda "bioconda::drep conda-forge::python=3.10 conda-forge::setuptools=75.8.2"
+    conda "${projectDir}/envs/drep.yml"
     publishDir { "${params.outdir}/${root}_drep" }, mode: params.publish_mode
 
     input:
@@ -75,11 +58,10 @@ workflow DEREPLICATION {
     main:
     ch_checkm1_db = Channel.value(file("NO_FILE"))
     if (!drep_ignore_genome_quality) {
-        CHECKM1_DB()
-        ch_checkm1_db = CHECKM1_DB.out.db_dir
+        ch_checkm1_db = Channel.value(file("${params.db_dir}/checkm1_db/checkm_data", checkIfExists: true))
     }
 
-    DREP(all_bins, ch_checkm1_db.first())
+    DREP(all_bins, ch_checkm1_db)
 
     emit:
     derep_dir = DREP.out.derep_dir

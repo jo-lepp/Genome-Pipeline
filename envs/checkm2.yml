@@ -1,0 +1,7 @@
+# CHECKM2: bacterial completeness/contamination
+name: gp_checkm2
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - checkm2

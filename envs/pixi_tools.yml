@@ -1,0 +1,10 @@
+# OPTIONAL: GVCLASS_SETUP / SSUEXTRACT_SETUP (git clone + pixi install). Drop if you keep host git.
+name: gp_pixi_tools
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - git
+  - pixi
+  - ca-certificates
+  - certifi

@@ -1,7 +1,7 @@
 process BUSCO {
     tag "$root"
     label 'busco'
-    conda "bioconda::busco"
+    conda "${projectDir}/envs/busco.yml"
     publishDir { "${params.outdir}/${root}_busco" }, mode: params.publish_mode
 
     input:
@@ -14,7 +14,8 @@ process BUSCO {
     script:
     """
     busco -i "${derep_dir}" -o busco_out -l ${params.busco_lineage} -m genome \\
-        --cpu ${params.threads_busco} --skip_bbtools
+        --cpu ${task.cpus} --skip_bbtools \\
+        --download_path "${params.db_dir}/busco_data/busco_datasets" --offline
     """
 }
 

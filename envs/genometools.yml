@@ -1,0 +1,7 @@
+# FNA_PREP: gt splitfasta (note the package name; plain 'genometools' is unrelated)
+name: gp_genometools
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - genometools-genometools
