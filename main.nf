@@ -17,6 +17,17 @@
 
 nextflow.enable.dsl = 2
 
+
+// ============================================
+// IMPORT MODULES
+// ============================================
+
+include { 
+    INSTALL_ENVS
+    INSTALL_DATABASES
+    INSTALL_ALL
+} from './modules/install.nf'
+
 include { MYLOASM }          from './modules/myloasm.nf'
 include { MAPPING }          from './modules/mapping.nf'
 include { BINNING }          from './modules/binning.nf'
@@ -29,7 +40,13 @@ include { CMSEARCH_EUK }     from './modules/cmsearch.nf'
 include { SSU_EXTRACT_ALL }  from './modules/cmsearch.nf'
 include { REPORT } from './modules/report.nf'
 
-workflow {
+
+
+// ============================================
+// GENOME PROCESSING WORKFLOW
+// ============================================
+workflow GENOME_PIPELINE {   
+    // ================= MAIN PIPELINE WORKFLOWS =================
     def drep_ignore_genome_quality = (params.drep_ignore_genome_quality instanceof Boolean)
         ? params.drep_ignore_genome_quality
         : params.drep_ignore_genome_quality.toString().trim().toLowerCase() == 'true'
@@ -211,7 +228,44 @@ workflow {
             """.stripIndent()
         } catch (Exception e) {
             log.warn "Could not print completion summary: ${e.message}"
+        }
     }
 }
-}
 
+// ============================================
+// MAIN.NF ENTRY POINT
+// ============================================
+// When main.nf is called, this workflow is executed. 
+// it either installs the containers and databases or 
+// it runs the genome pipeline defined above depending on
+// the config file and command line arguments.
+workflow {
+    // ================= INSTALLATION WORKFLOWS =================
+    if (params.install_all) {
+
+        INSTALL_ALL()
+
+    } else if (params.install_software) {
+
+        INSTALL_ENVS()
+
+    } else if (params.install_databases) {
+
+         ch_ready = Channel.fromList([
+            'drep',
+            'checkm2',
+            'gtdbtk',
+            'busco',
+            'pixi_tools',
+            'infernal',
+            'gvclass',
+            'ssuextract'
+        ])
+
+        INSTALL_DATABASES(ch_ready)
+
+    } else {
+        // ================= RUN GENOME PIPELINE =================
+        GENOME_PIPELINE()
+    }
+}

@@ -1,0 +1,7 @@
+# MYLOASM: long-read assembly
+name: gp_myloasm
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - myloasm

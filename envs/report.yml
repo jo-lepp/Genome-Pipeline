@@ -1,0 +1,10 @@
+name: gp_report
+
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  - python
+  - pandas
+  - openpyxl

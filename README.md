@@ -38,6 +38,163 @@ total run time when it finishes — see
 - conda/mamba on `PATH` — every process builds its own environment automatically
 - enough disk under `db_dir` for reference databases (CheckM1, CheckM2, GTDB-Tk, GVClass, SSUextract — tens of GB combined)
 
+## Installation
+
+Genome-Pipeline provides automated installation of its software dependencies and reference databases through Nextflow. Software installation and database installation are managed separately so that users can reuse existing installations, share reference databases across projects, and avoid unnecessary downloads.
+
+The pipeline uses **Conda for most software dependencies** and **Pixi for GVClass and SSUextract**. Singularity, Apptainer, and Docker are not required.
+
+### Prerequisites
+
+Before installing Genome-Pipeline, ensure that the following are available:
+
+- Nextflow (version 26.04.6 or later recommended)
+- Conda or Mamba, accessible from the command line
+- Git and standard Unix utilities
+- Internet access to download software packages and reference databases
+- Sufficient disk space for reference databases, particularly GTDB-Tk and CheckM2
+
+Clone the repository and enter the project directory:
+
+```bash
+git clone https://github.com/hhollandmoritz/Genome-Pipeline.git
+cd Genome-Pipeline
+```
+
+If using the development installation branch:
+
+```bash
+git checkout installation
+```
+
+### Installation directories
+
+Genome-Pipeline stores Conda environments, Pixi applications, and reference databases in separate locations. These can be configured in `nextflow.config`:
+
+```groovy
+params {
+    conda_cache_dir = "${projectDir}/conda_cache"
+    software_dir    = "${projectDir}/software"
+    db_dir          = "${projectDir}/refdbs"
+}
+```
+
+| Parameter | Purpose | Default location |
+|---|---|---|
+| `conda_cache_dir` | Conda environments managed by Nextflow | `conda_cache/` |
+| `software_dir` | GVClass and SSUextract Pixi installations | `software/` |
+| `db_dir` | Reference databases used by the pipeline | `refdbs/` |
+
+These directories are persistent and can be reused between pipeline runs.
+
+Users working on HPC systems may prefer absolute paths to shared storage locations. For example:
+
+```bash
+nextflow run main.nf \
+  --install_all true \
+  --conda_cache_dir /shared/software/genome_pipeline/conda_cache \
+  --software_dir /shared/software/genome_pipeline/software \
+  --db_dir /shared/databases/genome_pipeline
+```
+
+**Important:** Pixi environments are not relocatable. GVClass and SSUextract should remain in their original installation directories after installation. Moving these directories can cause Pixi to fail.
+
+### Installing software and databases
+
+The pipeline supports three installation modes.
+
+| Parameter | Action |
+|---|---|
+| `--install_all true` | Install all software environments and reference databases |
+| `--install_software true` | Install Conda environments and Pixi applications only |
+| `--install_databases true` | Install reference databases using previously installed software |
+
+**Option 1: Complete installation (recommended for new users)**
+
+Install all dependencies and databases in one command:
+
+```bash
+nextflow run main.nf \
+  --install_all true
+```
+
+Nextflow initializes the Conda environments, installs GVClass and SSUextract through Pixi, and downloads the reference databases once the relevant software is available.
+
+**Option 2: Install software only**
+
+```bash
+nextflow run main.nf \
+  --install_software true
+```
+
+This installs the pipeline's Conda environments and the Pixi-managed GVClass and SSUextract applications, without downloading their reference databases. It is useful if you want to create symlinks to a shared set of databases.
+
+**Option 3: Install databases only**
+
+```bash
+nextflow run main.nf \
+  --install_databases true
+```
+
+This installs the reference databases without repeating the software installation workflow.
+
+The required Conda and Pixi installations must already be available. For a fresh installation, run `--install_software true` first or use `--install_all true`.
+
+
+### Reusing existing installations
+
+Users who already have software or reference databases installed can configure the pipeline to use their existing locations.
+
+For example:
+
+```bash
+nextflow run main.nf \
+  --input_fgz data/sample01.fastq.gz \
+  --outdir results/sample01 \
+  --db_dir /shared/databases/genome_pipeline \
+  -resume
+```
+The `db_dir` parameter specifies the parent directory containing all reference databases.
+
+Genome-Pipeline expects the following directory structure, which is created by `--install_databases true`:
+
+```text
+refdbs/
+├── checkm1_db/
+│   └── checkm_data/
+│       └── ...                      # CheckM1 reference data
+├── checkm2_data/
+│   └── checkm2_db/
+│       └── CheckM2_database/
+│           └── uniref100.KO.1.dmnd
+├── gtdbtk_db/
+│   └── gtdbtk_data/
+│       ├── metadata/
+│       ├── markers/
+│       ├── masks/
+│       ├── msa/
+│       ├── pplacer/
+│       ├── radii/
+│       └── taxonomy/
+├── busco_data/
+│   └── busco_datasets/
+│       └── ...                      # Selected BUSCO lineage datasets
+├── gvclass/
+│   └── ...                          # GVClass reference database
+├── ssuextract/
+│   └── ...                          # SSUextract reference database
+└── rfam_cm/
+    └── RF01960.cm
+```
+If the system you are working on already has some or all of these databases installed and prepared for these tools somewhere else, you can use symlinks to link to them on the system. 
+
+```
+cd Genome-Pipeline
+ln -s /path/to/gtdb-tk/dbs /path/to/db_dir/gtdbtk_db/
+```
+For shared installations, users should ensure that the required files are readable by the accounts running the analysis.
+
+
 ## Repo layout
 
 ```
@@ -379,6 +536,104 @@ nextflow run main.nf \
   --run_gtdbtk       false \
   -resume
 ```
+## Working on HPC systems
+
+The pipeline supports execution on high-performance computing (HPC) systems through Nextflow's built-in job scheduler integration. Nextflow automatically submits individual pipeline processes as separate jobs, using the CPU and memory requirements specified in `nextflow.config`.
+
+By default the pipeline runs in "local" mode(no job scheduler). Users running on HPC systems can select and configure their job scheduler using a Nextflow profile.
+
+### Selecting a job scheduler
+
+Scheduler profiles are defined in `conf/hpc.config` and loaded automatically by `nextflow.config`.
+
+| Scheduler | Profile | Command option |
+|---|---|---|
+| Local (default) | None required | No `-profile` needed |
+| SLURM | `slurm` | `-profile slurm` |
+| PBS Pro | `pbs` | `-profile pbs` |
+| Sun Grid Engine | `sge` | `-profile sge` |
+| LSF | `lsf` | `-profile lsf` |
+
+For example, to run the pipeline using SLURM:
+
+```bash
+nextflow run main.nf \
+  -profile slurm \
+  --input_fgz data/sample01.fastq.gz \
+  --outdir results/sample01 \
+  -resume
+```
+
+Installation tasks are local-only due to many worker-nodes being unable to connect to the internet. If your system allows more flexibility, you can relax this requirement in the by commenting out the lines below in the 'process' block of `nextflow.config`. 
+```
+withLabel: 'install' {
+        executor = 'local'
+    }
+```
+
+### Institution-specific HPC configurations
+
+HPC systems often require additional settings, such as job partitions, allocation accounts, submission limits, or cluster-specific resource requirements.
+
+The [nf-core institutional configuration repository](https://nf-co.re/configs) provides an extensive collection of example Nextflow configurations for HPC systems worldwide. The corresponding configuration files are available at [github.com/nf-core/configs](https://github.com/nf-core/configs).
+
+Users can either manually edit the `conf/hpc.config` file or adapt an appropriate configuration for their institution and supply it using Nextflow's `-c` option:
+
+```bash
+nextflow run main.nf \
+  -profile slurm \
+  -c my_cluster.config \
+  --input_fgz data/sample01.fastq.gz \
+  --outdir results/sample01 \
+  -resume
+```
+
+For example, a SLURM cluster configuration might contain:
+
+```groovy
+process {
+    queue = 'normal'
+    clusterOptions = '--account=my_account'
+}
+
+executor {
+    queueSize = 20
+}
+```
+
+Extra configuration files can be supplied:
+
+```bash
+nextflow run main.nf \
+  -profile slurm \
+  -c my_cluster.config,my_resources.config \
+  --input_fgz data/sample01.fastq.gz \
+  --outdir results/sample01 \
+  -resume
+```
+
+The `-c` option merges user configurations with the pipeline defaults. Existing parameters and resource requirements from nextflow.config will be used unless overridden in the config files supplied by the user.
+
+### Installing software and databases on HPC systems
+
+The pipeline separates software and reference database installation from analysis.
+
+Installation processes use the local executor, regardless of whether or not an HPC profile is specified. This allows users to perform installation on login or build nodes where software installation is permitted.
+
+Once installation is complete, subsequent analysis runs do not invoke installation processes unless installation is explicitly requested.
+
+Conda environments, Pixi-managed applications, and reference databases must be accessible from the compute nodes. Users can configure their locations through `conda_cache_dir`, `software_dir`, and `db_dir` in `nextflow.config` or through pipeline parameters.
+
+### Launching Nextflow through the scheduler
+
+On some HPC systems, it is preferable or required to launch the main Nextflow process through a job that manages the submission of all the other jobs rather than keeping it running on a login node.
+
+For SLURM, users can create a batch script that starts Nextflow with `-profile slurm`. The main batch job manages the workflow, while Nextflow submits individual analysis processes as additional SLURM jobs. 
+
+The main Nextflow job must remain running until the workflow completes, but can be launched with minimal compute requirements.
+
+For additional information, consult the [Nextflow executor documentation](https://www.nextflow.io/docs/latest/executor.html) and the [nf-core HPC configuration examples](https://nf-co.re/configs).
+
 
 ## Runtime announcement
 

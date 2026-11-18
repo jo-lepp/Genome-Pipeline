@@ -1,0 +1,8 @@
+# REMAG. CPU-only PyTorch build forced; drop the pytorch line if you want GPU.
+name: gp_remag
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - remag
+  - "pytorch=*=cpu*"

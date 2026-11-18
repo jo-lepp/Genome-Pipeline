@@ -1,0 +1,7 @@
+# DEPTH + METABAT2: jgi_summarize_bam_contig_depths ships with metabat2
+name: gp_metabat2
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - metabat2

@@ -54,12 +54,12 @@ process SSUEXTRACT_SETUP {
 process SSU_EXTRACT {
     tag "$root"
     label 'ssuextract'
-    conda "conda-forge::pixi"
+    conda "${projectDir}/envs/pixi_tools.yml"
     publishDir { "${params.outdir}/${root}_ssuextract" }, mode: params.publish_mode
 
     input:
     tuple val(root), path(mylo_assembly)
-    path install_dir
+    val install_dir
 
     output:
     tuple val(root), path("results"), emit: results_dir
@@ -70,7 +70,9 @@ process SSU_EXTRACT {
     def tree_flag = params.ssuextract_tree_classification ? '--tree_classification' : ''
     """
     cd "${install_dir}"
-    pixi run ssuextract -q "\$OLDPWD/${mylo_assembly}" --outdir "\$OLDPWD/results" ${tree_flag}
+    pixi run ssuextract -q "\$OLDPWD/${mylo_assembly}" --outdir "\$OLDPWD/results" ${tree_flag} \\
+        --database_path "${params.db_dir}/ssuextract" \\
+        --database_profile ${params.ssuextract_db_profile}
     """
 }
 
@@ -79,33 +81,19 @@ workflow SSU_EXTRACT_ALL {
     assembly   // tuple(root, mylo_assembly)
 
     main:
-    SSUEXTRACT_SETUP()
-    SSU_EXTRACT(assembly, SSUEXTRACT_SETUP.out.install_dir.first())
+    ch_install_dir = Channel.value(file("${params.software_dir}/ssuextract", checkIfExists: true).toAbsolutePath().toString())
+    SSU_EXTRACT(assembly, ch_install_dir)
 
     emit:
     results_dir = SSU_EXTRACT.out.results_dir
     summary     = SSU_EXTRACT.out.summary
 }
 
-// ---- Rfam RF01960 (SSU_rRNA_eukarya) covariance model, downloaded once ----
-process CM_MODEL {
-    label 'small'
-    storeDir "${params.db_dir}/rfam_cm"
-
-    output:
-    path "RF01960.cm", emit: cm_file
-
-    script:
-    """
-    wget -O RF01960.cm "${params.rfam_eukarya_cm_url}"
-    """
-}
-
 // ---- cmsearch + extraction, once per sample ----
 process CMSEARCH {
     tag "$root"
     label 'cmsearch'
-    conda "bioconda::infernal bioconda::samtools bioconda::seqkit"
+    conda "${projectDir}/envs/infernal.yml"
     publishDir "${params.outdir}", mode: params.publish_mode
 
     input:
@@ -157,8 +145,24 @@ workflow CMSEARCH_EUK {
     assembly   // tuple(root, mylo_assembly)
 
     main:
-    CM_MODEL()
-    CMSEARCH(assembly, CM_MODEL.out.cm_file.first())
+    // Tells user how to install db. If rfam_cm database isn't detected
+    def model_path = "${params.db_dir}/rfam_cm/RF01960.cm"
+
+    if (!file(model_path).exists()) {
+        error """
+        ERROR: Required Rfam covariance model not found:
+        ${model_path}
+
+        Please install the reference databases first:
+
+            nextflow run main.nf --install_databases true
+        """
+    }
+
+    ch_model = Channel.value(
+        file(model_path, checkIfExists: true)
+    )
+    CMSEARCH(assembly, ch_model)
 
     emit:
     ssu_fa  = CMSEARCH.out.ssu_fa

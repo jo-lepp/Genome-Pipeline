@@ -1,0 +1,8 @@
+# CM_MODEL + CMSEARCH (legacy fast mode). If esl-sfetch is missing after solve, add 'easel'.
+name: gp_infernal
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - infernal=1.1.5
+  - samtools

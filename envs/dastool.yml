@@ -1,0 +1,7 @@
+# DAS_TOOL: cross-method bin consensus
+name: gp_dastool
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - das_tool

@@ -1,0 +1,7 @@
+# BUSCO: eukaryotic QC
+name: gp_busco
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - busco
